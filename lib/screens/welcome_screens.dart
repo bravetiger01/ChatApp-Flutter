@@ -23,23 +23,22 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
-    
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: const Interval(0.0, 0.8, curve: Curves.easeOut),
-    ));
-    
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: const Interval(0.2, 1.0, curve: Curves.easeOut),
-    ));
-    
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0.0, 0.8, curve: Curves.easeOut),
+      ),
+    );
+
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: _animationController,
+            curve: const Interval(0.2, 1.0, curve: Curves.easeOut),
+          ),
+        );
+
     _animationController.forward();
   }
 
@@ -57,10 +56,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF1C1C1E),
-              Color(0xFF2C2C2E),
-            ],
+            colors: [Color(0xFF1C1C1E), Color(0xFF2C2C2E)],
           ),
         ),
         child: SafeArea(
@@ -88,18 +84,19 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         ),
                       ),
                       const SizedBox(height: 24),
-                      
+
                       // App Name
                       Text(
                         'SAMPARK',
-                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                          color: AppTheme.accentOrange,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
-                        ),
+                        style: Theme.of(context).textTheme.headlineLarge
+                            ?.copyWith(
+                              color: AppTheme.accentOrange,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 2,
+                            ),
                       ),
                       const SizedBox(height: 48),
-                      
+
                       // Connected Users
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -109,7 +106,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         ],
                       ),
                       const SizedBox(height: 24),
-                      
+
                       // Title
                       Text(
                         'Now You Are',
@@ -117,12 +114,11 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                       ),
                       Text(
                         'Connected',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: AppTheme.accentOrange,
-                        ),
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(color: AppTheme.accentOrange),
                       ),
                       const SizedBox(height: 16),
-                      
+
                       // Subtitle
                       Text(
                         'We help you to connect with your\npeople and make new friends',
@@ -133,7 +129,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   ),
                 ),
                 const Spacer(),
-                
+
                 // Bottom Section
                 SlideTransition(
                   position: _slideAnimation,
@@ -161,7 +157,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         ),
                       ),
                       const SizedBox(height: 16),
-                      
+
                       // Skip Button
                       TextButton(
                         onPressed: () => Navigator.pushNamed(context, '/home'),
@@ -216,11 +212,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           border: Border.all(color: Colors.white, width: 3),
           color: AppTheme.cardBackground,
         ),
-        child: const Icon(
-          Icons.person,
-          color: Colors.white,
-          size: 30,
-        ),
+        child: const Icon(Icons.person, color: Colors.white, size: 30),
       ),
     );
   }

@@ -11,8 +11,11 @@ import 'screens/new_contact_screen.dart';
 import 'screens/your_profile_screen.dart';
 import 'screens/call_screen.dart';
 import 'utils/app_theme.dart';
+import 'package:firebase_core/firebase_core.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(const SamParkApp());
 }
 
