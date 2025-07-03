@@ -1,8 +1,9 @@
-// screens/signup_screen.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../utils/app_theme.dart';
 import '../widgets/animated_button.dart';
 import '../services/auth_service.dart';
@@ -59,6 +60,30 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
   }
 
+  Future<String?> _uploadProfileImage(String uid) async {
+    if (_profileImage == null) return null;
+
+    try {
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('profile_pics')
+          .child('$uid.jpg');
+      
+      // Upload the image to Firebase Storage
+      await storageRef.putFile(_profileImage!);
+      
+      // Get the download URL
+      final downloadUrl = await storageRef.getDownloadURL();
+      return downloadUrl;
+    } catch (e) {
+      print('Error uploading profile image: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error uploading profile image')),
+      );
+      return null;
+    }
+  }
+
   Future<void> _signUpWithEmail() async {
     print('Sign up button pressed');
     if (_formKey.currentState!.validate()) {
@@ -77,9 +102,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
         // Update user profile with name
         await userCredential.user?.updateDisplayName(_nameController.text.trim());
 
-        // TODO: Upload profile image to Firebase Storage if selected
-        // You'll need to implement image upload functionality here
-        
+        // Upload profile image to Firebase Storage and get URL
+        final profilePicUrl = await _uploadProfileImage(userCredential.user!.uid);
+
+        // Save user data to Firestore
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userCredential.user!.uid)
+            .set({
+          'name': _nameController.text.trim(),
+          'email': _emailController.text.trim(),
+          'profilePic': profilePicUrl ?? '',
+          'lastActive': Timestamp.now(),
+        });
+
         print('Sign-up successful');
         if (mounted) {
           Navigator.pushReplacementNamed(context, '/home');
