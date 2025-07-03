@@ -1,4 +1,5 @@
 // main.dart
+import 'package:chat_app/screens/signup_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/welcome_screens.dart';
@@ -12,7 +13,6 @@ import 'screens/your_profile_screen.dart';
 import 'screens/call_screen.dart';
 import 'utils/app_theme.dart';
 import 'package:firebase_core/firebase_core.dart';
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -39,6 +39,7 @@ class SamParkApp extends StatelessWidget {
       routes: {
         '/': (context) => const WelcomeScreen(),
         '/login': (context) => const LoginScreen(),
+        '/sign-up': (context) => const SignUpScreen(),
         '/home': (context) => const HomeScreen(),
         '/chat': (context) => const ChatScreen(),
         '/profile': (context) => const ProfileScreen(),

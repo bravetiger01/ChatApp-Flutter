@@ -206,7 +206,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Center(
                     child: TextButton(
                       onPressed: () {
-                        // Navigate to sign up
+                        Navigator.pushNamed(context, '/sign-up');
                       },
                       child: RichText(
                         text: const TextSpan(
