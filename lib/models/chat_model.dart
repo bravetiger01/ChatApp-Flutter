@@ -1,19 +1,22 @@
 // models/chat_model.dart
+// models/chat_model.dart
 class ChatModel {
-  final String name;
+  final String chatId; // To store the chat document ID (e.g., uid1_uid2)
+  final String name; // Name of the other user
   final String lastMessage;
-  final String time;
-  final int unreadCount;
-  final bool isOnline;
-  final String? avatar;
+  final DateTime lastTime;
+  final bool isOnline; // Optional, requires additional logic
+  final int unreadCount; // Optional, requires additional logic
+  final String otherUserId; // UID of the other user
 
   ChatModel({
+    required this.chatId,
     required this.name,
     required this.lastMessage,
-    required this.time,
-    required this.unreadCount,
-    required this.isOnline,
-    this.avatar,
+    required this.lastTime,
+    this.isOnline = false,
+    this.unreadCount = 0,
+    required this.otherUserId,
   });
 }
 
