@@ -1,9 +1,9 @@
 import 'package:chat_app/screens/signup_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'screens/welcome_screens.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/chat_screens.dart';
@@ -13,15 +13,60 @@ import 'screens/new_contact_screen.dart';
 import 'screens/your_profile_screen.dart';
 import 'screens/call_screen.dart';
 import 'utils/app_theme.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'firebase_options.dart';
+import 'services/notification_service.dart';
+
+// Background message handler
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  print('Background message: ${message.data}');
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // Set up background message handler
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  await NotificationService.initialize();
+  
+  // Request notification permissions
+  final messaging = FirebaseMessaging.instance;
+  await messaging.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  // Store FCM token
+  final fcmToken = await messaging.getToken();
+  final user = FirebaseAuth.instance.currentUser;
+  if (user != null && fcmToken != null) {
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      'fcmToken': fcmToken,
+    }, SetOptions(merge: true));
+    print('FCM token stored for user ${user.uid}: $fcmToken');
+  }
+
+  // Update token on refresh
+  messaging.onTokenRefresh.listen((newToken) async {
+    if (user != null) {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'fcmToken': newToken,
+      }, SetOptions(merge: true));
+      print('FCM token updated for user ${user.uid}: $newToken');
+    }
+  });
+
   runApp(const SamParkApp());
 }
 
 class SamParkApp extends StatelessWidget {
   const SamParkApp({super.key});
+
+  
 
   @override
   Widget build(BuildContext context) {

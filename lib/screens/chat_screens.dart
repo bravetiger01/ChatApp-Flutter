@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 import '../widgets/message_bubble.dart';
 import '../models/chat_model.dart';
+import '../services/notification_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -21,8 +23,59 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    // Scroll to bottom initially
     _scrollToBottom();
+    _setupNotifications();
+    _checkInitialMessage();
+  }
+
+  void _setupNotifications() {
+    // Handle foreground messages
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print('Foreground message: ${message.data}');
+      NotificationService.showNotification(message);
+    });
+
+    // Handle notification tap when app is in background
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      final chatId = message.data['chatId'];
+      final otherUserId = message.data['otherUserId'];
+      final otherUserName = message.data['otherUserName'] ?? 'Unknown';
+      if (chatId != null && ModalRoute.of(context)!.settings.arguments != null) {
+        final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+        if (args['chatId'] != chatId) {
+          Navigator.pushReplacementNamed(
+            context,
+            '/chat',
+            arguments: {
+              'chatId': chatId,
+              'otherUserId': otherUserId,
+              'otherUserName': otherUserName,
+            },
+          );
+        }
+      }
+    });
+  }
+
+  void _checkInitialMessage() async {
+    // Handle notification tap when app is terminated
+    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) {
+      final chatId = initialMessage.data['chatId'];
+      final otherUserId = initialMessage.data['otherUserId'];
+      final otherUserName = initialMessage.data['otherUserName'] ?? 'Unknown';
+      if (chatId != null) {
+        Navigator.pushReplacementNamed(
+          context,
+          '/chat',
+          arguments: {
+            'chatId': chatId,
+            'otherUserId': otherUserId,
+            'otherUserName': otherUserName,
+          },
+        );
+      }
+    }
   }
 
   @override
