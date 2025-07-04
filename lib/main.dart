@@ -45,7 +45,7 @@ void main() async {
   final user = FirebaseAuth.instance.currentUser;
   if (user != null && fcmToken != null) {
     await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-      'fcmToken': fcmToken,
+      'fcmTokens': FieldValue.arrayUnion([fcmToken]),
     }, SetOptions(merge: true));
     print('FCM token stored for user ${user.uid}: $fcmToken');
   }
