@@ -17,21 +17,23 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'services/notification_service.dart';
 
-// Background message handler
+
+
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   print('Background message: ${message.data}');
+  await NotificationService.showNotification(message);
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  
+
   // Set up background message handler
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   await NotificationService.initialize();
-  
+
   // Request notification permissions
   final messaging = FirebaseMessaging.instance;
   await messaging.requestPermission(
@@ -40,24 +42,38 @@ void main() async {
     sound: true,
   );
 
-  // Store FCM token
-  final fcmToken = await messaging.getToken();
-  final user = FirebaseAuth.instance.currentUser;
-  if (user != null && fcmToken != null) {
-    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-      'fcmTokens': FieldValue.arrayUnion([fcmToken]),
-    }, SetOptions(merge: true));
-    print('FCM token stored for user ${user.uid}: $fcmToken');
-  }
+  // Listen for authentication state changes to handle token storage
+  FirebaseAuth.instance.authStateChanges().listen((User? user) async {
+    if (user != null) {
+      final fcmToken = await messaging.getToken();
+      if (fcmToken != null) {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'name': user.displayName ?? 'Unknown',
+          'email': user.email,
+          'fcmTokens': FieldValue.arrayUnion([fcmToken]),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        print('FCM token stored for user ${user.uid}: $fcmToken');
+      }
+    }
+  });
 
   // Update token on refresh
   messaging.onTokenRefresh.listen((newToken) async {
+    final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'fcmToken': newToken,
+        'fcmTokens': FieldValue.arrayUnion([newToken]),
+        'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       print('FCM token updated for user ${user.uid}: $newToken');
     }
+  });
+
+  // Foreground message handler
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    print('Foreground message received: ${message.data}');
+    NotificationService.showNotification(message);
   });
 
   runApp(const SamParkApp());
