@@ -18,8 +18,10 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final User? currentUser = FirebaseAuth.instance.currentUser;
-  bool _hasResetUnreadCount = false; // Flag to prevent multiple resets
-  int _lastMessageCount = 0; // Track message count to detect new messages
+  bool _hasResetUnreadCount = false;
+  int _lastMessageCount = 0;
+  bool _isEditing = false;
+  String? _editingMessageId;
 
   @override
   void initState() {
@@ -90,7 +92,7 @@ class _ChatScreenState extends State<ChatScreen> {
         FirebaseFirestore.instance.collection('chats').doc(chatId).update({
           'unreadCount_${currentUser!.uid}': 0,
         }).catchError((e) => print('Error resetting unread count: $e'));
-        _hasResetUnreadCount = true; // Prevent multiple resets
+        _hasResetUnreadCount = true;
       } else {
         print('Error: No navigation arguments provided');
       }
@@ -107,51 +109,179 @@ class _ChatScreenState extends State<ChatScreen> {
   void _sendMessage(String chatId) async {
     if (_messageController.text.trim().isNotEmpty && currentUser != null) {
       final messageText = _messageController.text.trim();
-      try {
-        // Add message to the messages subcollection
-        await FirebaseFirestore.instance
-            .collection('chats')
-            .doc(chatId)
-            .collection('messages')
-            .add({
-          'senderId': currentUser!.uid,
-          'text': messageText,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
+      
+      if (_isEditing && _editingMessageId != null) {
+        // Update existing message
+        _updateMessage(chatId, _editingMessageId!, messageText);
+        _cancelEdit();
+      } else {
+        // Send new message
+        try {
+          await FirebaseFirestore.instance
+              .collection('chats')
+              .doc(chatId)
+              .collection('messages')
+              .add({
+            'senderId': currentUser!.uid,
+            'text': messageText,
+            'timestamp': FieldValue.serverTimestamp(),
+            'isEdited': false,
+          });
 
-        // Update the parent chat document with lastMessage and lastTime
-        await FirebaseFirestore.instance.collection('chats').doc(chatId).update({
-          'lastMessage': messageText,
-          'lastTime': FieldValue.serverTimestamp(),
-          'unreadCount_${currentUser!.uid}': 0, // Reset unread count for sender
-          'unreadCount_${chatId.split('_').firstWhere((id) => id != currentUser!.uid)}':
-              FieldValue.increment(1), // Increment unread count for recipient
-        });
+          await FirebaseFirestore.instance.collection('chats').doc(chatId).update({
+            'lastMessage': messageText,
+            'lastTime': FieldValue.serverTimestamp(),
+            'unreadCount_${currentUser!.uid}': 0,
+            'unreadCount_${chatId.split('_').firstWhere((id) => id != currentUser!.uid)}':
+                FieldValue.increment(1),
+          });
 
-        _messageController.clear();
-      } catch (e) {
-        print('Error sending message: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send message: $e')),
-        );
+          _messageController.clear();
+        } catch (e) {
+          print('Error sending message: $e');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to send message: $e')),
+          );
+        }
       }
     }
   }
 
-  void _scrollToBottom() {
-  if (_scrollController.hasClients) {
-    _scrollController.animateTo(
-      0.0, // Top of the reversed list
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
+  void _updateMessage(String chatId, String messageId, String newText) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'text': newText,
+        'isEdited': true,
+        'editedAt': FieldValue.serverTimestamp(),
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message updated successfully')),
+      );
+    } catch (e) {
+      print('Error updating message: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update message: $e')),
+      );
+    }
+  }
+
+  void _deleteMessage(String chatId, String messageId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .doc(messageId)
+          .delete();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message deleted successfully')),
+      );
+    } catch (e) {
+      print('Error deleting message: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete message: $e')),
+      );
+    }
+  }
+
+  void _startEditing(String messageId, String currentText) {
+    setState(() {
+      _isEditing = true;
+      _editingMessageId = messageId;
+      _messageController.text = currentText;
+    });
+  }
+
+  void _cancelEdit() {
+    setState(() {
+      _isEditing = false;
+      _editingMessageId = null;
+      _messageController.clear();
+    });
+  }
+
+  void _showMessageOptions(String messageId, String messageText, String chatId) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.cardBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit, color: AppTheme.primaryBlue),
+              title: const Text('Edit Message'),
+              onTap: () {
+                Navigator.pop(context);
+                _startEditing(messageId, messageText);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('Delete Message'),
+              onTap: () {
+                Navigator.pop(context);
+                _showDeleteConfirmation(chatId, messageId);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel, color: Colors.grey),
+              title: const Text('Cancel'),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
     );
   }
-}
 
+  void _showDeleteConfirmation(String chatId, String messageId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.cardBackground,
+        title: const Text('Delete Message'),
+        content: const Text('Are you sure you want to delete this message?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteMessage(chatId, messageId);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Retrieve navigation arguments
     final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
     if (args == null) {
       print('Error: No navigation arguments provided');
@@ -161,7 +291,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     final chatId = args['chatId'] as String;
     final otherUserId = args['otherUserId'] as String;
-    final otherUserName = args['otherUserName'] as String? ?? 'Unknown User'; // Fixed typo in key
+    final otherUserName = args['otherUserName'] as String? ?? 'Unknown User';
 
     return Scaffold(
       appBar: AppBar(
@@ -262,10 +392,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   Navigator.pushNamed(context, '/profile', arguments: {'userId': otherUserId});
                   break;
                 case 'media':
-                  // Show media gallery (implement later)
                   break;
                 case 'mute':
-                  // Mute conversation (implement later)
                   break;
               }
             },
@@ -307,6 +435,24 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
+          // Show editing indicator
+          if (_isEditing)
+            Container(
+              padding: const EdgeInsets.all(12),
+              color: AppTheme.primaryBlue.withOpacity(0.1),
+              child: Row(
+                children: [
+                  const Icon(Icons.edit, color: AppTheme.primaryBlue, size: 20),
+                  const SizedBox(width: 8),
+                  const Text('Editing message...'),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: _cancelEdit,
+                    child: const Icon(Icons.close, color: Colors.red),
+                  ),
+                ],
+              ),
+            ),
           // Messages List
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
@@ -329,7 +475,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
 
                 final messages = snapshot.data!.docs;
-                // Scroll to bottom when new messages are added
                 if (messages.length > _lastMessageCount) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     _scrollToBottom();
@@ -340,16 +485,33 @@ class _ChatScreenState extends State<ChatScreen> {
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  reverse: true, // Show newest messages at the bottom
+                  reverse: true,
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    final messageData = messages[index].data() as Map<String, dynamic>;
+                    final messageDoc = messages[index];
+                    final messageData = messageDoc.data() as Map<String, dynamic>;
+                    final isMe = messageData['senderId'] == currentUser!.uid;
+                    final isEdited = messageData['isEdited'] ?? false;
+                    
                     final message = MessageModel(
                       message: messageData['text']?.toString() ?? '',
                       time: _formatTime((messageData['timestamp'] as Timestamp?)?.toDate()),
-                      isMe: messageData['senderId'] == currentUser!.uid,
+                      isMe: isMe,
                     );
-                    return MessageBubble(message: message);
+
+                    return GestureDetector(
+                      onLongPress: isMe ? () {
+                        _showMessageOptions(
+                          messageDoc.id,
+                          messageData['text']?.toString() ?? '',
+                          chatId,
+                        );
+                      } : null,
+                      child: MessageBubble(
+                        message: message,
+                        isEdited: isEdited,
+                      ),
+                    );
                   },
                 );
               },
@@ -370,15 +532,16 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Row(
               children: [
                 // Attachment Button
-                IconButton(
-                  onPressed: () {
-                    _showAttachmentOptions();
-                  },
-                  icon: const Icon(
-                    Icons.add,
-                    color: AppTheme.primaryBlue,
+                if (!_isEditing)
+                  IconButton(
+                    onPressed: () {
+                      _showAttachmentOptions();
+                    },
+                    icon: const Icon(
+                      Icons.add,
+                      color: AppTheme.primaryBlue,
+                    ),
                   ),
-                ),
                 // Text Input
                 Expanded(
                   child: Container(
@@ -388,10 +551,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     child: TextField(
                       controller: _messageController,
-                      decoration: const InputDecoration(
-                        hintText: 'Type here...',
+                      decoration: InputDecoration(
+                        hintText: _isEditing ? 'Edit message...' : 'Type here...',
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(
+                        contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 8,
                         ),
@@ -409,8 +572,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       color: AppTheme.primaryBlue,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.send,
+                    child: Icon(
+                      _isEditing ? Icons.check : Icons.send,
                       color: Colors.white,
                       size: 20,
                     ),
