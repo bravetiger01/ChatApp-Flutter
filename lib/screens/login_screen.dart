@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 import '../widgets/animated_button.dart';
 import '../services/auth_service.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -84,11 +83,6 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Back Button
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-                  ),
                   const SizedBox(height: 20),
 
                   // Logo
