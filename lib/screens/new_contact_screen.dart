@@ -1,4 +1,5 @@
-// screens/new_contact_screen.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class NewContactScreen extends StatefulWidget {
@@ -12,9 +13,7 @@ class _NewContactScreenState extends State<NewContactScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _aboutController = TextEditingController();
-
   bool _isLoading = false;
 
   @override
@@ -127,24 +126,9 @@ class _NewContactScreenState extends State<NewContactScreen> {
                         if (value == null || value.isEmpty) {
                           return 'Please enter email';
                         }
-                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                            .hasMatch(value)) {
                           return 'Please enter a valid email';
-                        }
-                        return null;
-                      },
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Phone Number Field
-                    _buildInputField(
-                      controller: _phoneController,
-                      label: 'Phone number',
-                      icon: Icons.phone,
-                      keyboardType: TextInputType.phone,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter phone number';
                         }
                         return null;
                       },
@@ -282,37 +266,151 @@ class _NewContactScreenState extends State<NewContactScreen> {
     );
   }
 
-  void _saveContact() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
+  Future<void> _saveContact() async {
+  if (_formKey.currentState!.validate()) {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You must be logged in to add a contact.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final email = _emailController.text.trim();
+      final name = _nameController.text.trim();
+      final about = _aboutController.text.trim();
+
+      // Query Firestore to find the user by email
+      final userQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+
+      if (userQuery.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No user found with this email.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final otherUser = userQuery.docs.first;
+      final otherUserId = otherUser.id;
+
+      if (otherUserId == currentUser.uid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You cannot add yourself as a contact.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Check if contact already exists
+      final contactDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('contacts')
+          .doc(otherUserId)
+          .get();
+
+      if (contactDoc.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This contact already exists.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Save contact to the current user's contacts subcollection
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('contacts')
+          .doc(otherUserId)
+          .set({
+        'name': name,
+        'email': email,
+        'about': about,
+        'addedAt': FieldValue.serverTimestamp(),
       });
 
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
+      // Create a new chat
+      final chatId = _generateChatId(currentUser.uid, otherUserId);
+      final chatDoc = await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(chatId)
+          .get();
 
-      setState(() {
-        _isLoading = false;
-      });
+      if (!chatDoc.exists) {
+        await FirebaseFirestore.instance.collection('chats').doc(chatId).set({
+          'members': [currentUser.uid, otherUserId],
+          'lastMessage': 'New chat started',
+          'lastTime': FieldValue.serverTimestamp(),
+        });
+      }
 
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Contact saved successfully!'),
+          content: Text('Contact and chat created successfully!'),
           backgroundColor: Colors.green,
         ),
       );
 
       // Navigate back
       Navigator.pop(context);
+    } catch (e) {
+      print('Error saving contact: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving contact: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
+  }
+}
+  String _generateChatId(String uid1, String uid2) {
+    // Generate a consistent chat ID by sorting UIDs
+    final uids = [uid1, uid2]..sort();
+    return '${uids[0]}_${uids[1]}';
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _phoneController.dispose();
     _aboutController.dispose();
     super.dispose();
   }
