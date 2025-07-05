@@ -8,6 +8,7 @@ class ChatModel {
   final bool isOnline; // Optional, requires additional logic
   final int unreadCount; // Optional, requires additional logic
   final String otherUserId; // UID of the other user
+  final String? profilePicURL;
 
   ChatModel({
     required this.chatId,
@@ -17,6 +18,7 @@ class ChatModel {
     this.isOnline = false,
     this.unreadCount = 0,
     required this.otherUserId,
+    this.profilePicURL,
   });
 }
 

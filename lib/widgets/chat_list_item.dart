@@ -1,4 +1,3 @@
-// widgets/chat_list_item.dart
 import 'package:flutter/material.dart';
 import '../models/chat_model.dart';
 import '../utils/app_theme.dart';
@@ -7,66 +6,55 @@ class ChatListItem extends StatelessWidget {
   final ChatModel chat;
   final VoidCallback onTap;
 
-  const ChatListItem({super.key, required this.chat, required this.onTap});
+  const ChatListItem({
+    super.key,
+    required this.chat,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       onTap: onTap,
       leading: CircleAvatar(
-        backgroundColor: AppTheme.primaryBlue,
-        child: Text(
-          chat.name[0].toUpperCase(),
-          style: const TextStyle(color: Colors.white),
-        ),
+        backgroundImage: (chat.profilePicURL != null && chat.profilePicURL!.isNotEmpty)
+            ? NetworkImage(chat.profilePicURL!)
+            : null,
+        backgroundColor: chat.profilePicURL!.isEmpty
+            ? AppTheme.cardBackground
+            : Colors.transparent,
+        child: (chat.profilePicURL == null || chat.profilePicURL!.isEmpty)
+            ? const Icon(Icons.person, color: Colors.white)
+            : null,
+        radius: 24,
       ),
       title: Text(
         chat.name,
-        style: const TextStyle(
-          color: AppTheme.textPrimary,
-          fontWeight: FontWeight.w600,
-        ),
+        style: Theme.of(context).textTheme.bodyLarge,
       ),
       subtitle: Text(
         chat.lastMessage,
-        style: const TextStyle(color: AppTheme.textSecondary),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodyMedium,
       ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            _formatTime(chat.lastTime),
-            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-          ),
-          if (chat.unreadCount > 0)
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: const BoxDecoration(
-                color: AppTheme.primaryBlue,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                chat.unreadCount.toString(),
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
-        ],
+      trailing: Text(
+        _formatTime(chat.lastTime),
+        style: Theme.of(context).textTheme.bodySmall,
       ),
     );
   }
 
   String _formatTime(DateTime time) {
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final date = DateTime(time.year, time.month, time.day);
-    if (date == today) {
-      return '${time.hour}:${time.minute.toString().padLeft(2, '0')} ${time.hour >= 12 ? 'PM' : 'AM'}';
-    } else if (date == DateTime(now.year, now.month, now.day - 1)) {
+    final difference = now.difference(time);
+
+    if (difference.inDays == 0) {
+      return '${time.hour}:${time.minute.toString().padLeft(2, '0')}';
+    } else if (difference.inDays == 1) {
       return 'Yesterday';
     } else {
-      return '${time.day}/${time.month}/${time.year % 100}';
+      return '${time.day}/${time.month}/${time.year}';
     }
   }
 }

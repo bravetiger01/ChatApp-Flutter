@@ -15,23 +15,28 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
 
-  Future<String> getUserName(String uid) async {
+  Future<Map<String, String>> getUserData(String uid) async {
     try {
       DocumentSnapshot userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .get();
-      return userDoc.exists ? userDoc['name'] ?? 'Unknown' : 'Unknown';
+      if (userDoc.exists) {
+        return {
+          'name': userDoc['name'] ?? 'Unknown',
+          'profilePic': userDoc['profilePic'] ?? '',
+        };
+      }
+      return {'name': 'Unknown', 'profilePic': ''};
     } catch (e) {
-      print('Error fetching user name: $e');
-      return 'Unknown';
+      print('Error fetching user data: $e');
+      return {'name': 'Unknown', 'profilePic': ''};
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (currentUser == null) {
-      // Handle case where user is not logged in
       return const Scaffold(body: Center(child: Text('Please log in')));
     }
 
@@ -58,9 +63,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               'Sampark',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: AppTheme.accentOrange,
-                fontSize: 20,
-              ),
+                    color: AppTheme.accentOrange,
+                    fontSize: 20,
+                  ),
             ),
           ],
         ),
@@ -124,7 +129,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
-          // Tab Bar
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
@@ -135,7 +139,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          // Chat List
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
@@ -147,7 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return const Center(child: Text('Error loading chats'));
+                  return Center(child: Text('Error loading chats: ${snapshot.error}'));
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return const Center(child: Text('No chats available'));
@@ -158,37 +161,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 return ListView.builder(
                   itemCount: chatDocs.length,
                   itemBuilder: (context, index) {
-                    final chatData =
-                        chatDocs[index].data() as Map<String, dynamic>;
+                    final chatData = chatDocs[index].data() as Map<String, dynamic>;
                     final chatId = chatDocs[index].id;
                     final members = List<String>.from(chatData['members']);
                     final lastMessage = chatData['lastMessage'] ?? '';
                     final lastTime =
-                        (chatData['lastTime'] as Timestamp?)?.toDate() ??
-                        DateTime.now();
-                    // Find the other user's UID
+                        (chatData['lastTime'] as Timestamp?)?.toDate() ?? DateTime.now();
                     final otherUserId = members.firstWhere(
                       (uid) => uid != currentUser!.uid,
                     );
 
-                    // Fetch the other user's name
-                    return FutureBuilder<String>(
-                      future: getUserName(otherUserId),
-                      builder: (context, nameSnapshot) {
-                        if (nameSnapshot.connectionState ==
-                            ConnectionState.waiting) {
+                    return FutureBuilder<Map<String, String>>(
+                      future: getUserData(otherUserId),
+                      builder: (context, userSnapshot) {
+                        if (userSnapshot.connectionState == ConnectionState.waiting) {
                           return const ListTile(title: Text('Loading...'));
                         }
-                        final name = nameSnapshot.data ?? 'Unknown';
+                        if (userSnapshot.hasError) {
+                          print('Error in userSnapshot: ${userSnapshot.error}');
+                          return const ListTile(title: Text('Error loading user'));
+                        }
+                        final userData = userSnapshot.data ?? {'name': 'Unknown', 'profilePic': ''};
+                        final name = userData['name']!;
+                        final profilePic = userData['profilePic']!;
 
                         final chat = ChatModel(
                           chatId: chatId,
                           name: name,
                           lastMessage: lastMessage,
                           lastTime: lastTime,
-                          isOnline: false, // Implement logic if needed
-                          unreadCount: 0, // Implement logic if needed
+                          isOnline: false,
+                          unreadCount: 0,
                           otherUserId: otherUserId,
+                          profilePicURL: profilePic, // Map to profilePicUrl in ChatModel
                         );
 
                         return ChatListItem(
@@ -200,6 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               'chatId': chatId,
                               'otherUserId': otherUserId,
                               'otherUserName': name,
+                              'profilePic': profilePic,
                             },
                           ),
                         );
@@ -226,7 +232,6 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: (index) {
           switch (index) {
             case 0:
-              // Already on home
               break;
             case 1:
               Navigator.pushNamed(context, '/profile');
@@ -242,10 +247,7 @@ class _HomeScreenState extends State<HomeScreen> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chats'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.contacts),
-            label: 'Contacts',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.contacts), label: 'Contacts'),
           BottomNavigationBarItem(icon: Icon(Icons.call), label: 'Calls'),
         ],
       ),
