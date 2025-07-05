@@ -19,11 +19,11 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final User? currentUser = FirebaseAuth.instance.currentUser;
   bool _hasResetUnreadCount = false; // Flag to prevent multiple resets
+  int _lastMessageCount = 0; // Track message count to detect new messages
 
   @override
   void initState() {
     super.initState();
-    _scrollToBottom();
     _setupNotifications();
     _checkInitialMessage();
   }
@@ -129,7 +129,6 @@ class _ChatScreenState extends State<ChatScreen> {
         });
 
         _messageController.clear();
-        _scrollToBottom();
       } catch (e) {
         print('Error sending message: $e');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -140,16 +139,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+  if (_scrollController.hasClients) {
+    _scrollController.animateTo(
+      0.0, // Top of the reversed list
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
   }
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -163,9 +161,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     final chatId = args['chatId'] as String;
     final otherUserId = args['otherUserId'] as String;
-    final otherUserName = args['otherUser-ES1'] as String? ??
-      'Unknown User'; // Fallback if name is not provided
-
+    final otherUserName = args['otherUserName'] as String? ?? 'Unknown User'; // Fixed typo in key
 
     return Scaffold(
       appBar: AppBar(
@@ -333,6 +329,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
 
                 final messages = snapshot.data!.docs;
+                // Scroll to bottom when new messages are added
+                if (messages.length > _lastMessageCount) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _scrollToBottom();
+                  });
+                  _lastMessageCount = messages.length;
+                }
+
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
