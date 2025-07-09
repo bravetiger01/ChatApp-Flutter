@@ -45,5 +45,15 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Your app needs access to the camera for video calls and to capture photos to share in chats.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Your app needs access to the microphone for voice messages and audio calls.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Your app needs access to the photo library to allow you to share images in chats.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+    	<string>remote-notification</string>
+	</array>
 </dict>
 </plist>
