@@ -1,6 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
 import '../utils/app_theme.dart';
 import '../widgets/message_bubble.dart';
 import '../models/chat_model.dart';
@@ -31,13 +38,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _setupNotifications() {
-    // Handle foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       print('Foreground message: ${message.data}');
       NotificationService.showNotification(message);
     });
 
-    // Handle notification tap when app is in background
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       final chatId = message.data['chatId'];
       final otherUserId = message.data['otherUserId'];
@@ -60,7 +65,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _checkInitialMessage() async {
-    // Handle notification tap when app is terminated
     final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
     if (initialMessage != null) {
       final chatId = initialMessage.data['chatId'];
@@ -83,7 +87,6 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Reset unread count when opening the chat
     if (!_hasResetUnreadCount && currentUser != null) {
       final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
       if (args != null) {
@@ -111,11 +114,9 @@ class _ChatScreenState extends State<ChatScreen> {
       final messageText = _messageController.text.trim();
       
       if (_isEditing && _editingMessageId != null) {
-        // Update existing message
         _updateMessage(chatId, _editingMessageId!, messageText);
         _cancelEdit();
       } else {
-        // Send new message
         try {
           await FirebaseFirestore.instance
               .collection('chats')
@@ -147,6 +148,46 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _sendFile(String chatId, File file, String type) async {
+    try {
+      String fileUrl = await _uploadFile(file, type);
+      String fileName = file.path.split('/').last; // Store original file name
+      await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .add({
+        'senderId': currentUser!.uid,
+        'text': '',
+        'fileUrl': fileUrl,
+        'fileType': type,
+        'fileName': fileName, // Add file name to Firestore
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      await FirebaseFirestore.instance.collection('chats').doc(chatId).update({
+        'lastMessage': type == 'image' ? 'Image' : 'Document',
+        'lastTime': FieldValue.serverTimestamp(),
+        'unreadCount_${currentUser!.uid}': 0,
+        'unreadCount_${chatId.split('_').firstWhere((id) => id != currentUser!.uid)}':
+            FieldValue.increment(1),
+      });
+    } catch (e) {
+      print('Error sending file: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send file: $e')),
+      );
+    }
+  }
+
+  Future<String> _uploadFile(File file, String type) async {
+    String fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
+    Reference storageRef = FirebaseStorage.instance.ref().child('chat_files/$type/$fileName');
+    UploadTask uploadTask = storageRef.putFile(file);
+    TaskSnapshot snapshot = await uploadTask;
+    return await snapshot.ref.getDownloadURL();
+  }
+
   void _updateMessage(String chatId, String messageId, String newText) async {
     try {
       await FirebaseFirestore.instance
@@ -173,6 +214,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _deleteMessage(String chatId, String messageId) async {
     try {
+      final messageDoc = await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .doc(messageId)
+          .get();
+      
+      if (messageDoc.exists) {
+        final messageData = messageDoc.data() as Map<String, dynamic>;
+        final fileUrl = messageData['fileUrl']?.toString();
+        
+        if (fileUrl != null && fileUrl.isNotEmpty) {
+          await _deleteFileFromStorage(fileUrl);
+        }
+      }
+      
       await FirebaseFirestore.instance
           .collection('chats')
           .doc(chatId)
@@ -188,6 +245,16 @@ class _ChatScreenState extends State<ChatScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to delete message: $e')),
       );
+    }
+  }
+
+  Future<void> _deleteFileFromStorage(String fileUrl) async {
+    try {
+      final ref = FirebaseStorage.instance.refFromURL(fileUrl);
+      await ref.delete();
+      print('File deleted from storage successfully');
+    } catch (e) {
+      print('Error deleting file from storage: $e');
     }
   }
 
@@ -207,7 +274,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _showMessageOptions(String messageId, String messageText, String chatId) {
+  void _showMessageOptions(String messageId, String messageText, String chatId, {String? fileUrl, String? fileName}) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.cardBackground,
@@ -219,14 +286,24 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.edit, color: AppTheme.primaryBlue),
-              title: const Text('Edit Message'),
-              onTap: () {
-                Navigator.pop(context);
-                _startEditing(messageId, messageText);
-              },
-            ),
+            if (fileUrl == null)
+              ListTile(
+                leading: const Icon(Icons.edit, color: AppTheme.primaryBlue),
+                title: const Text('Edit Message'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _startEditing(messageId, messageText);
+                },
+              ),
+            if (fileUrl != null)
+              ListTile(
+                leading: const Icon(Icons.download, color: AppTheme.primaryBlue),
+                title: const Text('Download File'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _downloadFile(fileUrl, fileName ?? 'downloaded_file');
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('Delete Message'),
@@ -270,6 +347,56 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _downloadFile(String fileUrl, String fileName) async {
+    try {
+      // Request storage permission
+      if (Platform.isAndroid) {
+        var status = await Permission.storage.request();
+        if (!status.isGranted) {
+          status = await Permission.manageExternalStorage.request();
+          if (!status.isGranted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Storage permission denied')),
+            );
+            return;
+          }
+        }
+      }
+
+      // Get the downloads directory
+      final directory = await getDownloadsDirectory();
+      if (directory == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to access downloads directory')),
+        );
+        return;
+      }
+
+      final filePath = '${directory.path}/$fileName';
+      final dio = Dio();
+      
+      // Download the file
+      await dio.download(
+        fileUrl,
+        filePath,
+        onReceiveProgress: (received, total) {
+          if (total != -1) {
+            print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+          }
+        },
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('File downloaded to $filePath')),
+      );
+    } catch (e) {
+      print('Error downloading file: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to download file: $e')),
+      );
+    }
+  }
+
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -277,6 +404,32 @@ class _ChatScreenState extends State<ChatScreen> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
+    }
+  }
+
+  Future<void> _pickImageFromCamera(String chatId) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.camera);
+    if (pickedFile != null) {
+      _sendFile(chatId, File(pickedFile.path), 'image');
+    }
+  }
+
+  Future<void> _pickImageFromGallery(String chatId) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      _sendFile(chatId, File(pickedFile.path), 'image');
+    }
+  }
+
+  Future<void> _pickDocument(String chatId) async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx', 'txt'],
+    );
+    if (result != null) {
+      _sendFile(chatId, File(result.files.single.path!), 'document');
     }
   }
 
@@ -435,7 +588,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
-          // Show editing indicator
           if (_isEditing)
             Container(
               padding: const EdgeInsets.all(12),
@@ -453,7 +605,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 ],
               ),
             ),
-          // Messages List
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
@@ -492,21 +643,31 @@ class _ChatScreenState extends State<ChatScreen> {
                     final messageData = messageDoc.data() as Map<String, dynamic>;
                     final isMe = messageData['senderId'] == currentUser!.uid;
                     final isEdited = messageData['isEdited'] ?? false;
-                    
+                    final fileUrl = messageData['fileUrl']?.toString();
+                    final fileType = messageData['fileType']?.toString();
+                    final fileName = messageData['fileName']?.toString();
+
                     final message = MessageModel(
                       message: messageData['text']?.toString() ?? '',
                       time: _formatTime((messageData['timestamp'] as Timestamp?)?.toDate()),
                       isMe: isMe,
+                      fileUrl: fileUrl,
+                      fileType: fileType,
+                      fileName: fileName,
                     );
 
                     return GestureDetector(
-                      onLongPress: isMe ? () {
-                        _showMessageOptions(
-                          messageDoc.id,
-                          messageData['text']?.toString() ?? '',
-                          chatId,
-                        );
-                      } : null,
+                      onLongPress: () {
+                        if (isMe || fileUrl != null) {
+                          _showMessageOptions(
+                            messageDoc.id,
+                            messageData['text']?.toString() ?? '',
+                            chatId,
+                            fileUrl: fileUrl,
+                            fileName: fileName,
+                          );
+                        }
+                      },
                       child: MessageBubble(
                         message: message,
                         isEdited: isEdited,
@@ -517,7 +678,6 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
-          // Message Input
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
@@ -531,18 +691,16 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             child: Row(
               children: [
-                // Attachment Button
                 if (!_isEditing)
                   IconButton(
                     onPressed: () {
-                      _showAttachmentOptions();
+                      _showAttachmentOptions(chatId);
                     },
                     icon: const Icon(
                       Icons.add,
                       color: AppTheme.primaryBlue,
                     ),
                   ),
-                // Text Input
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
@@ -563,7 +721,6 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                 ),
-                // Send Button
                 IconButton(
                   onPressed: () => _sendMessage(chatId),
                   icon: Container(
@@ -601,7 +758,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _showAttachmentOptions() {
+  void _showAttachmentOptions(String chatId) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.cardBackground,
@@ -620,19 +777,19 @@ class _ChatScreenState extends State<ChatScreen> {
                   Icons.photo_camera,
                   'Camera',
                   Colors.red,
-                  () {},
+                  () => _pickImageFromCamera(chatId),
                 ),
                 _buildAttachmentOption(
                   Icons.photo_library,
                   'Gallery',
                   Colors.purple,
-                  () {},
+                  () => _pickImageFromGallery(chatId),
                 ),
                 _buildAttachmentOption(
                   Icons.insert_drive_file,
                   'Document',
                   Colors.blue,
-                  () {},
+                  () => _pickDocument(chatId),
                 ),
               ],
             ),

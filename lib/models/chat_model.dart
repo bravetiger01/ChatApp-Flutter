@@ -19,6 +19,7 @@ class ChatModel {
     this.unreadCount = 0,
     required this.otherUserId,
     this.profilePicURL,
+    
   });
 }
 
@@ -26,11 +27,17 @@ class MessageModel {
   final String message;
   final String time;
   final bool isMe;
+  final String? fileUrl;
+  final String? fileType;
+  final String? fileName;
 
   MessageModel({
     required this.message,
     required this.time,
     required this.isMe,
+    this.fileUrl,
+    this.fileType,
+    this.fileName,
   });
 }
 
