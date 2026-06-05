@@ -36,6 +36,9 @@ class _ChatScreenState extends State<ChatScreen> {
   // Prefetched messages shown while the Firestore stream is connecting.
   List<CachedMessage> _cachedMessages = [];
   bool _cacheLoaded = false;
+  // Optimistic messages shown instantly while the server write is in-flight.
+  // Key: tempId, Value: message data map.
+  final Map<String, Map<String, dynamic>> _pendingMessages = {};
 
   @override
   void initState() {
@@ -133,14 +136,24 @@ class _ChatScreenState extends State<ChatScreen> {
     required String chatId,
     required bool isLive,
   }) {
+    // Pending (optimistic) bubbles are prepended so they sit at the
+    // bottom of the reversed list — newest messages first (index 0).
+    final pending = _pendingMessages.entries
+        .map((e) => (id: e.key, data: e.value))
+        .toList()
+        .reversed // oldest pending first → bottom of screen (index 0 in reversed list = bottom)
+        .toList();
+    final allItems = [...pending, ...items];
+
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
       reverse: true,
-      itemCount: items.length,
+      itemCount: allItems.length,
       itemBuilder: (context, index) {
-        final item = items[index];
+        final item = allItems[index];
         final messageData = item.data;
+        final isPending = messageData.containsKey('_tempId');
         final isMe = messageData['senderId'] == currentUser!.uid;
         final isEdited = messageData['isEdited'] ?? false;
         final fileUrl = messageData['fileUrl']?.toString();
@@ -156,8 +169,31 @@ class _ChatScreenState extends State<ChatScreen> {
           fileName: fileName,
         );
 
+        // Pending bubbles: slightly dimmed with a sending clock indicator.
+        Widget bubble = MessageBubble(message: message, isEdited: isEdited);
+        if (isPending) {
+          bubble = Opacity(
+            opacity: 0.75,
+            child: Stack(
+              children: [
+                bubble,
+                Positioned(
+                  right: 12,
+                  bottom: 6,
+                  child: Icon(
+                    Icons.access_time_rounded,
+                    size: 12,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
         return GestureDetector(
-          onLongPress: isLive
+          // Disable long-press on pending and stale-cache messages
+          onLongPress: (isLive && !isPending)
               ? () {
                   if (isMe || fileUrl != null) {
                     _showMessageOptions(
@@ -169,48 +205,72 @@ class _ChatScreenState extends State<ChatScreen> {
                     );
                   }
                 }
-              : null, // disable long-press on stale cached snapshot
-          child: MessageBubble(message: message, isEdited: isEdited),
+              : null,
+          child: bubble,
         );
       },
     );
   }
 
   void _sendMessage(String chatId) async {
-    if (_messageController.text.trim().isNotEmpty && currentUser != null) {
-      final messageText = _messageController.text.trim();
-      
-      if (_isEditing && _editingMessageId != null) {
-        _updateMessage(chatId, _editingMessageId!, messageText);
-        _cancelEdit();
-      } else {
-        try {
-          await FirebaseFirestore.instance
-              .collection('chats')
-              .doc(chatId)
-              .collection('messages')
-              .add({
-            'senderId': currentUser!.uid,
-            'text': messageText,
-            'timestamp': FieldValue.serverTimestamp(),
-            'isEdited': false,
-          });
+    if (_messageController.text.trim().isEmpty || currentUser == null) return;
+    final messageText = _messageController.text.trim();
 
-          await FirebaseFirestore.instance.collection('chats').doc(chatId).update({
-            'lastMessage': messageText,
-            'lastTime': FieldValue.serverTimestamp(),
-            'unreadCount_${currentUser!.uid}': 0,
-            if (_otherUserId != null)
-              'unreadCount_$_otherUserId': FieldValue.increment(1),
-          });
+    if (_isEditing && _editingMessageId != null) {
+      _updateMessage(chatId, _editingMessageId!, messageText);
+      _cancelEdit();
+      return;
+    }
 
-          _messageController.clear();
-        } catch (e) {
-          print('Error sending message: $e');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to send message: $e')),
-          );
-        }
+    // ── Optimistic UI ──────────────────────────────────────────
+    // 1. Clear field immediately — user feels instant response.
+    _messageController.clear();
+
+    // 2. Add a temporary pending entry so the bubble appears now.
+    final tempId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
+    setState(() {
+      _pendingMessages[tempId] = {
+        'senderId': currentUser!.uid,
+        'text': messageText,
+        'timestamp': Timestamp.now(), // local estimate for sort order
+        'isEdited': false,
+        '_tempId': tempId,
+      };
+    });
+    // Scroll to bottom for the pending bubble.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+
+    try {
+      // 3. Write the message — don't block the UI on this.
+      await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .add({
+        'senderId': currentUser!.uid,
+        'text': messageText,
+        'timestamp': FieldValue.serverTimestamp(),
+        'isEdited': false,
+      });
+
+      // 4. Metadata update is fire-and-forget — no await needed.
+      FirebaseFirestore.instance.collection('chats').doc(chatId).update({
+        'lastMessage': messageText,
+        'lastTime': FieldValue.serverTimestamp(),
+        'unreadCount_${currentUser!.uid}': 0,
+        if (_otherUserId != null)
+          'unreadCount_$_otherUserId': FieldValue.increment(1),
+      });
+
+      // 5. Remove pending bubble — the stream snapshot now includes the real doc.
+      if (mounted) setState(() => _pendingMessages.remove(tempId));
+    } catch (e) {
+      // Remove optimistic bubble and show error on failure.
+      if (mounted) {
+        setState(() => _pendingMessages.remove(tempId));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send: $e')),
+        );
       }
     }
   }
