@@ -30,6 +30,8 @@ class _ChatScreenState extends State<ChatScreen> {
   int _lastMessageCount = 0;
   bool _isEditing = false;
   String? _editingMessageId;
+  // Stored from nav args so send methods don't need to parse chatId.
+  String? _otherUserId;
 
   @override
   void initState() {
@@ -88,17 +90,17 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_hasResetUnreadCount && currentUser != null) {
-      final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
-      if (args != null) {
+    final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
+    if (args != null) {
+      // Cache otherUserId so send methods can use it without parsing chatId.
+      _otherUserId ??= args['otherUserId'] as String?;
+
+      if (!_hasResetUnreadCount && currentUser != null) {
         final chatId = args['chatId'] as String;
-        print('Resetting unread count for chatId: $chatId, user: ${currentUser!.uid}');
         FirebaseFirestore.instance.collection('chats').doc(chatId).update({
           'unreadCount_${currentUser!.uid}': 0,
         }).catchError((e) => print('Error resetting unread count: $e'));
         _hasResetUnreadCount = true;
-      } else {
-        print('Error: No navigation arguments provided');
       }
     }
   }
@@ -134,8 +136,8 @@ class _ChatScreenState extends State<ChatScreen> {
             'lastMessage': messageText,
             'lastTime': FieldValue.serverTimestamp(),
             'unreadCount_${currentUser!.uid}': 0,
-            'unreadCount_${chatId.split('_').firstWhere((id) => id != currentUser!.uid)}':
-                FieldValue.increment(1),
+            if (_otherUserId != null)
+              'unreadCount_$_otherUserId': FieldValue.increment(1),
           });
 
           _messageController.clear();
@@ -170,8 +172,8 @@ class _ChatScreenState extends State<ChatScreen> {
         'lastMessage': type == 'image' ? 'Image' : 'Document',
         'lastTime': FieldValue.serverTimestamp(),
         'unreadCount_${currentUser!.uid}': 0,
-        'unreadCount_${chatId.split('_').firstWhere((id) => id != currentUser!.uid)}':
-            FieldValue.increment(1),
+        if (_otherUserId != null)
+          'unreadCount_$_otherUserId': FieldValue.increment(1),
       });
     } catch (e) {
       print('Error sending file: $e');

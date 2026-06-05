@@ -1,0 +1,95 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────
+    // Helper functions
+    // ─────────────────────────────────────────────
+
+    // True if the request is made by a signed-in user.
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // True if the requesting user owns this document (doc id == uid).
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // True if the requesting user is a member of the given chat document.
+    function isChatMember(chatData) {
+      return isSignedIn() && request.auth.uid in chatData.members;
+    }
+
+    // ─────────────────────────────────────────────
+    // /users/{uid}
+    // ─────────────────────────────────────────────
+    match /users/{uid} {
+      // Any signed-in user may read a user document (needed to resolve
+      // names/avatars when listing chats/contacts).
+      allow read: if isSignedIn();
+
+      // Only the owner may create or update their own document.
+      // Prevents one user from overwriting another user's profile.
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid);
+
+      // Deletion is not allowed through the client.
+      allow delete: if false;
+
+      // ─── /users/{uid}/contacts/{contactId} ───
+      match /contacts/{contactId} {
+        // Only the owning user may read, create, or delete their contacts.
+        allow read, create, delete: if isOwner(uid);
+        // Updates are not needed for contacts in the current schema.
+        allow update: if false;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // /chats/{chatId}
+    // ─────────────────────────────────────────────
+    match /chats/{chatId} {
+      // Only chat members may read the chat document.
+      allow read: if isChatMember(resource.data);
+
+      // A signed-in user may create a chat only if they list themselves
+      // as one of the two members.
+      allow create: if isSignedIn()
+                    && request.auth.uid in request.resource.data.members
+                    && request.resource.data.members.size() == 2;
+
+      // Only existing members may update chat metadata (lastMessage, unreadCount, etc.).
+      allow update: if isChatMember(resource.data);
+
+      // Chats cannot be deleted from the client.
+      allow delete: if false;
+
+      // ─── /chats/{chatId}/messages/{messageId} ───
+      match /messages/{messageId} {
+        // Only chat members may read messages.
+        allow read: if isChatMember(get(/databases/$(database)/documents/chats/$(chatId)).data);
+
+        // Only a chat member may add a message, and the senderId must
+        // match the requesting user (prevents impersonation).
+        allow create: if isChatMember(get(/databases/$(database)/documents/chats/$(chatId)).data)
+                      && request.resource.data.senderId == request.auth.uid;
+
+        // A message may only be edited by its original sender.
+        // Only 'text', 'isEdited', and 'editedAt' fields may change.
+        allow update: if resource.data.senderId == request.auth.uid
+                      && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['text', 'isEdited', 'editedAt']);
+
+        // A message may only be deleted by its original sender.
+        allow delete: if resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // Block access to any other collection not explicitly listed above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
