@@ -12,6 +12,7 @@ import 'dart:io';
 import '../utils/app_theme.dart';
 import '../widgets/message_bubble.dart';
 import '../models/chat_model.dart';
+import '../services/message_cache.dart';
 import '../services/notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
@@ -32,6 +33,9 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _editingMessageId;
   // Stored from nav args so send methods don't need to parse chatId.
   String? _otherUserId;
+  // Prefetched messages shown while the Firestore stream is connecting.
+  List<CachedMessage> _cachedMessages = [];
+  bool _cacheLoaded = false;
 
   @override
   void initState() {
@@ -95,6 +99,16 @@ class _ChatScreenState extends State<ChatScreen> {
       // Cache otherUserId so send methods can use it without parsing chatId.
       _otherUserId ??= args['otherUserId'] as String?;
 
+      // Load prefetched messages once so they're shown before stream connects.
+      if (!_cacheLoaded) {
+        final chatId = args['chatId'] as String;
+        final cached = MessageCache.instance.get(chatId);
+        if (cached != null) {
+          _cachedMessages = cached;
+        }
+        _cacheLoaded = true;
+      }
+
       if (!_hasResetUnreadCount && currentUser != null) {
         final chatId = args['chatId'] as String;
         FirebaseFirestore.instance.collection('chats').doc(chatId).update({
@@ -110,6 +124,56 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+  // ── Shared message list renderer ─────────────────────────────
+  // Used by both the prefetch-cache path (isLive: false) and the
+  // live Firestore stream path (isLive: true).
+  Widget _buildMessageList({
+    required List<({String id, Map<String, dynamic> data})> items,
+    required String chatId,
+    required bool isLive,
+  }) {
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.all(16),
+      reverse: true,
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final messageData = item.data;
+        final isMe = messageData['senderId'] == currentUser!.uid;
+        final isEdited = messageData['isEdited'] ?? false;
+        final fileUrl = messageData['fileUrl']?.toString();
+        final fileType = messageData['fileType']?.toString();
+        final fileName = messageData['fileName']?.toString();
+
+        final message = MessageModel(
+          message: messageData['text']?.toString() ?? '',
+          time: _formatTime((messageData['timestamp'] as Timestamp?)?.toDate()),
+          isMe: isMe,
+          fileUrl: fileUrl,
+          fileType: fileType,
+          fileName: fileName,
+        );
+
+        return GestureDetector(
+          onLongPress: isLive
+              ? () {
+                  if (isMe || fileUrl != null) {
+                    _showMessageOptions(
+                      item.id,
+                      messageData['text']?.toString() ?? '',
+                      chatId,
+                      fileUrl: fileUrl,
+                      fileName: fileName,
+                    );
+                  }
+                }
+              : null, // disable long-press on stale cached snapshot
+          child: MessageBubble(message: message, isEdited: isEdited),
+        );
+      },
+    );
   }
 
   void _sendMessage(String chatId) async {
@@ -633,11 +697,20 @@ class _ChatScreenState extends State<ChatScreen> {
                   .orderBy('timestamp', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
+                // ── While connecting: show prefetched cache if available ──
                 if (snapshot.connectionState == ConnectionState.waiting) {
+                  if (_cachedMessages.isNotEmpty) {
+                    return _buildMessageList(
+                      items: _cachedMessages
+                          .map((c) => (id: c.id, data: c.data))
+                          .toList(),
+                      chatId: chatId,
+                      isLive: false,
+                    );
+                  }
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  print('Error loading messages: ${snapshot.error}');
                   return const Center(child: Text('Error loading messages'));
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -645,6 +718,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
 
                 final messages = snapshot.data!.docs;
+
+                // Keep the cache fresh for next cold-open of this chat.
+                MessageCache.instance.updateFromDocs(chatId, messages);
+
                 if (messages.length > _lastMessageCount) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     _scrollToBottom();
@@ -652,47 +729,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   _lastMessageCount = messages.length;
                 }
 
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  reverse: true,
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final messageDoc = messages[index];
-                    final messageData = messageDoc.data() as Map<String, dynamic>;
-                    final isMe = messageData['senderId'] == currentUser!.uid;
-                    final isEdited = messageData['isEdited'] ?? false;
-                    final fileUrl = messageData['fileUrl']?.toString();
-                    final fileType = messageData['fileType']?.toString();
-                    final fileName = messageData['fileName']?.toString();
-
-                    final message = MessageModel(
-                      message: messageData['text']?.toString() ?? '',
-                      time: _formatTime((messageData['timestamp'] as Timestamp?)?.toDate()),
-                      isMe: isMe,
-                      fileUrl: fileUrl,
-                      fileType: fileType,
-                      fileName: fileName,
-                    );
-
-                    return GestureDetector(
-                      onLongPress: () {
-                        if (isMe || fileUrl != null) {
-                          _showMessageOptions(
-                            messageDoc.id,
-                            messageData['text']?.toString() ?? '',
-                            chatId,
-                            fileUrl: fileUrl,
-                            fileName: fileName,
-                          );
-                        }
-                      },
-                      child: MessageBubble(
-                        message: message,
-                        isEdited: isEdited,
-                      ),
-                    );
-                  },
+                return _buildMessageList(
+                  items: messages
+                      .map((d) => (id: d.id, data: d.data() as Map<String, dynamic>))
+                      .toList(),
+                  chatId: chatId,
+                  isLive: true,
                 );
               },
             ),

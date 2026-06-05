@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../services/message_cache.dart';
 import '../utils/app_theme.dart';
 
 class YourProfileScreen extends StatefulWidget {
@@ -381,6 +382,7 @@ class _YourProfileScreenState extends State<YourProfileScreen> {
             TextButton(
               onPressed: () async {
                 Navigator.pop(dialogContext);
+                MessageCache.instance.clear(); // wipe prefetch cache on sign-out
                 await FirebaseAuth.instance.signOut();
                 if (mounted) {
                   Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);

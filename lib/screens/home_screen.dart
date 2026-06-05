@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 import '../widgets/chat_list_item.dart';
 import '../models/chat_model.dart';
+import '../services/message_cache.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -252,6 +253,9 @@ class _HomeScreenState extends State<HomeScreen> {
             if (otherUserId.isEmpty) {
               return const ListTile(title: Text('Invalid chat data'));
             }
+
+            // Fire-and-forget prefetch so ChatScreen opens instantly.
+            MessageCache.instance.prefetch(chatId);
 
             return FutureBuilder<Map<String, String>>(
               future: getUserData(otherUserId),
