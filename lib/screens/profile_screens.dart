@@ -1,3 +1,7 @@
+// screens/profile_screens.dart
+// Contact profile — shown when viewing another user's profile from the chat/contacts list.
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 
@@ -6,7 +10,12 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Receive userId passed via Navigator.pushNamed arguments
+    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final userId = args?['userId'] as String?;
+
     return Scaffold(
+      backgroundColor: AppTheme.darkBackground,
       appBar: AppBar(
         backgroundColor: AppTheme.darkBackground,
         elevation: 0,
@@ -16,197 +25,176 @@ class ProfileScreen extends StatelessWidget {
           icon: const Icon(Icons.arrow_back_ios),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            // Profile Picture
-            Stack(
-              children: [
-                const CircleAvatar(
-                  radius: 60,
-                  backgroundColor: AppTheme.cardBackground,
-                  child: Icon(
-                    Icons.person,
-                    color: Colors.white,
-                    size: 60,
-                  ),
-                ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: Colors.green,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: AppTheme.darkBackground,
-                        width: 3,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
+      body: userId == null
+          ? const Center(child: Text('No user selected', style: TextStyle(color: Colors.white70)))
+          : FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance.collection('users').doc(userId).get(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
+                  return const Center(
+                    child: Text('Could not load profile', style: TextStyle(color: Colors.white70)),
+                  );
+                }
 
-            // User Info
-            Text(
-              'nitish838@gmail.com',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.email,
-                  color: AppTheme.textSecondary,
-                  size: 16,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Nitish Kumar',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                'Online',
-                style: TextStyle(
-                  color: Colors.green,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(height: 32),
+                final data = snapshot.data!.data() as Map<String, dynamic>;
+                final name = data['name']?.toString() ?? 'Unknown';
+                final email = data['email']?.toString() ?? '';
+                final about = data['about']?.toString() ?? '';
+                final profilePic = data['profilePic']?.toString() ?? '';
+                final lastActive = (data['lastActive'] as Timestamp?)?.toDate();
+                final isOnline = lastActive != null &&
+                    DateTime.now().difference(lastActive).inMinutes < 5;
 
-            // Bio Section
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppTheme.cardBackground,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'About',
-                    style: TextStyle(
-                      color: AppTheme.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Hey everyone! I am using SamPark app to communicate with my friends.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Media Section
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppTheme.cardBackground,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
                     children: [
-                      const Text(
-                        'Media',
-                        style: TextStyle(
-                          color: AppTheme.textPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                      // ── Avatar ──
+                      Stack(
+                        children: [
+                          _buildAvatar(profilePic),
+                          Positioned(
+                            bottom: 4,
+                            right: 4,
+                            child: Container(
+                              width: 18,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: isOnline ? Colors.green : Colors.grey,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: AppTheme.darkBackground, width: 2),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // ── Name ──
+                      Text(name, style: Theme.of(context).textTheme.headlineMedium),
+                      const SizedBox(height: 4),
+
+                      // ── Email ──
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.email, color: AppTheme.textSecondary, size: 14),
+                          const SizedBox(width: 6),
+                          Text(email, style: Theme.of(context).textTheme.bodyMedium),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // ── Online badge ──
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: (isOnline ? Colors.green : Colors.grey).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          isOnline ? 'Online' : 'Offline',
+                          style: TextStyle(
+                            color: isOnline ? Colors.green : Colors.grey,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                      TextButton(
-                        onPressed: () {},
-                        child: const Text(
-                          'View all',
-                          style: TextStyle(color: AppTheme.primaryBlue),
+                      const SizedBox(height: 28),
+
+                      // ── About ──
+                      if (about.isNotEmpty)
+                        _buildInfoCard(
+                          context,
+                          title: 'About',
+                          body: about,
                         ),
+                      if (about.isNotEmpty) const SizedBox(height: 16),
+
+                      // ── Action buttons ──
+                      _buildActionButton(
+                        context,
+                        icon: Icons.message,
+                        title: 'Message',
+                        onTap: () => Navigator.pushNamed(context, '/chat'),
+                      ),
+                      const SizedBox(height: 12),
+                      _buildActionButton(
+                        context,
+                        icon: Icons.call,
+                        title: 'Voice Call',
+                        onTap: () => Navigator.pushNamed(context, '/call'),
+                      ),
+                      const SizedBox(height: 12),
+                      _buildActionButton(
+                        context,
+                        icon: Icons.videocam,
+                        title: 'Video Call',
+                        onTap: () => Navigator.pushNamed(context, '/call'),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _buildMediaThumbnail(),
-                      const SizedBox(width: 8),
-                      _buildMediaThumbnail(),
-                      const SizedBox(width: 8),
-                      _buildMediaThumbnail(),
-                    ],
-                  ),
-                ],
-              ),
+                );
+              },
             ),
-            const SizedBox(height: 32),
+    );
+  }
 
-            // Action Buttons
-            _buildActionButton(
-              icon: Icons.message,
-              title: 'Message',
-              onTap: () => Navigator.pushNamed(context, '/chat'),
-            ),
-            const SizedBox(height: 12),
-            _buildActionButton(
-              icon: Icons.call,
-              title: 'Voice Call',
-              onTap: () => Navigator.pushNamed(context, '/call'),
-            ),
-            const SizedBox(height: 12),
-            _buildActionButton(
-              icon: Icons.videocam,
-              title: 'Video Call',
-              onTap: () => Navigator.pushNamed(context, '/call'),
-            ),
-          ],
+  // ── Avatar ──────────────────────────────────────────────────
+  Widget _buildAvatar(String url) {
+    const double r = 60;
+    if (url.isNotEmpty) {
+      return CircleAvatar(
+        radius: r,
+        backgroundColor: AppTheme.cardBackground,
+        child: ClipOval(
+          child: CachedNetworkImage(
+            imageUrl: url,
+            width: r * 2,
+            height: r * 2,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => const Icon(Icons.person, color: Colors.white, size: 48),
+            errorWidget: (_, __, ___) => const Icon(Icons.person, color: Colors.white, size: 48),
+          ),
         ),
+      );
+    }
+    return const CircleAvatar(
+      radius: r,
+      backgroundColor: AppTheme.cardBackground,
+      child: Icon(Icons.person, color: Colors.white, size: 48),
+    );
+  }
+
+  // ── Info card ───────────────────────────────────────────────
+  Widget _buildInfoCard(BuildContext context, {required String title, required String body}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBackground,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Text(body, style: Theme.of(context).textTheme.bodyMedium),
+        ],
       ),
     );
   }
 
-  Widget _buildMediaThumbnail() {
-    return Expanded(
-      child: Container(
-        height: 80,
-        decoration: BoxDecoration(
-          color: AppTheme.darkBackground,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(
-          Icons.image,
-          color: AppTheme.textSecondary,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
+  // ── Action button ───────────────────────────────────────────
+  Widget _buildActionButton(
+    BuildContext context, {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
@@ -217,35 +205,19 @@ class ProfileScreen extends StatelessWidget {
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppTheme.cardBackground,
-          borderRadius: BorderRadius.circular(12),
-        ),
+        decoration: BoxDecoration(color: AppTheme.cardBackground, borderRadius: BorderRadius.circular(12)),
         child: Row(
           children: [
-            Icon(
-              icon,
-              color: AppTheme.primaryBlue,
-            ),
+            Icon(icon, color: AppTheme.primaryBlue),
             const SizedBox(width: 16),
-            Text(
-              title,
-              style: const TextStyle(
-                color: AppTheme.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text(title,
+                style: const TextStyle(
+                    color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w500)),
             const Spacer(),
-            const Icon(
-              Icons.arrow_forward_ios,
-              color: AppTheme.textSecondary,
-              size: 16,
-            ),
+            const Icon(Icons.arrow_forward_ios, color: AppTheme.textSecondary, size: 16),
           ],
         ),
       ),
     );
   }
 }
-

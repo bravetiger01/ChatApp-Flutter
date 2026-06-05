@@ -175,19 +175,15 @@ class _HomeScreenState extends State<HomeScreen> {
             case 0:
               break;
             case 1:
-              Navigator.pushNamed(context, '/profile');
-              break;
-            case 2:
               Navigator.pushNamed(context, '/new-contact');
               break;
-            case 3:
+            case 2:
               Navigator.pushNamed(context, '/call');
               break;
           }
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chats'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
           BottomNavigationBarItem(icon: Icon(Icons.contacts), label: 'Contacts'),
           BottomNavigationBarItem(icon: Icon(Icons.call), label: 'Calls'),
         ],
