@@ -1,4 +1,5 @@
 // screens/your_profile_screen.dart
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class YourProfileScreen extends StatefulWidget {
@@ -344,18 +345,20 @@ class _YourProfileScreenState extends State<YourProfileScreen> {
       _isEditing = false;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Profile updated successfully!'),
-        backgroundColor: Colors.green,
-      ),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile updated successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   void _showLogoutDialog() {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
           backgroundColor: const Color(0xFF3A3D4A),
           title: const Text(
@@ -368,20 +371,25 @@ class _YourProfileScreenState extends State<YourProfileScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text(
                 'Cancel',
                 style: TextStyle(color: Colors.white70),
               ),
             ),
             TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/login',
-                  (route) => false,
-                );
+              onPressed: () async {
+                Navigator.pop(dialogContext); // close the dialog first
+                await FirebaseAuth.instance.signOut();
+                // AuthGate listens to authStateChanges and will redirect
+                // to LoginScreen automatically once signed out.
+                if (mounted) {
+                  Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    '/',
+                    (route) => false,
+                  );
+                }
               },
               child: const Text(
                 'Logout',
