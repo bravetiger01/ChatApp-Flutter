@@ -16,21 +16,29 @@ class _HomeScreenState extends State<HomeScreen> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
   String _selectedTab = 'Chats';
 
+  // Cache user data to avoid re-fetching on every StreamBuilder rebuild.
+  // Key: uid, Value: {name, profilePic}
+  final Map<String, Map<String, String>> _userCache = {};
+
   Future<Map<String, String>> getUserData(String uid) async {
+    if (_userCache.containsKey(uid)) {
+      return _userCache[uid]!;
+    }
     try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+      final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .get();
-      if (userDoc.exists) {
-        return {
-          'name': userDoc['name'] ?? 'Unknown',
-          'profilePic': userDoc['profilePic'] ?? '',
-        };
-      }
-      return {'name': 'Unknown', 'profilePic': ''};
+      final data = userDoc.exists
+          ? {
+              'name': (userDoc.data() as Map<String, dynamic>)['name']?.toString() ?? 'Unknown',
+              'profilePic': (userDoc.data() as Map<String, dynamic>)['profilePic']?.toString() ?? '',
+            }
+          : {'name': 'Unknown', 'profilePic': ''};
+      _userCache[uid] = data;
+      return data;
     } catch (e) {
-      print('Error fetching user data: $e');
+      // Don't cache errors so a retry is possible next time.
       return {'name': 'Unknown', 'profilePic': ''};
     }
   }

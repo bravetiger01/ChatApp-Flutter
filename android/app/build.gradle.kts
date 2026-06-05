@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.chat_app"
-        minSdk = 23 // Compatible with FCM and flutter_local_notifications
+        minSdk = flutter.minSdkVersion // Compatible with FCM and flutter_local_notifications
         targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName

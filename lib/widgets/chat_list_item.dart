@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../models/chat_model.dart';
 import '../utils/app_theme.dart';
@@ -18,15 +19,15 @@ class ChatListItem extends StatelessWidget {
       onTap: onTap,
       leading: CircleAvatar(
         backgroundImage: (chat.profilePicURL != null && chat.profilePicURL!.isNotEmpty)
-            ? NetworkImage(chat.profilePicURL!)
+            ? CachedNetworkImageProvider(chat.profilePicURL!)
             : null,
-        backgroundColor: chat.profilePicURL!.isEmpty
+        backgroundColor: (chat.profilePicURL == null || chat.profilePicURL!.isEmpty)
             ? AppTheme.cardBackground
             : Colors.transparent,
+        radius: 24,
         child: (chat.profilePicURL == null || chat.profilePicURL!.isEmpty)
             ? const Icon(Icons.person, color: Colors.white)
             : null,
-        radius: 24,
       ),
       title: Text(
         chat.name,

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -478,11 +479,27 @@ class _ChatScreenState extends State<ChatScreen> {
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundImage: profilePic.isNotEmpty ? NetworkImage(profilePic) : null,
                       backgroundColor: profilePic.isEmpty ? AppTheme.cardBackground : null,
-                      child: profilePic.isEmpty
-                          ? Icon(Icons.person, color: Colors.white, size: 20)
-                          : null,
+                      child: profilePic.isNotEmpty
+                          ? ClipOval(
+                              child: CachedNetworkImage(
+                                imageUrl: profilePic,
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => const Icon(
+                                  Icons.person,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                errorWidget: (_, __, ___) => const Icon(
+                                  Icons.person,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                            )
+                          : const Icon(Icons.person, color: Colors.white, size: 20),
                     ),
                     if (isOnline)
                       Positioned(
