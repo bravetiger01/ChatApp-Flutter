@@ -58,9 +58,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } else {
       print('Form validation failed');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Form validation failed')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Form validation failed')));
     }
   }
 
@@ -106,7 +106,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   Center(
                     child: Text(
                       'SAMPARK',
-                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                      style: Theme.of(context).textTheme.headlineLarge
+                          ?.copyWith(
                             color: AppTheme.accentOrange,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 2,
@@ -148,7 +149,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 24),
 
                   // Password Field
-                  Text('Password', style: Theme.of(context).textTheme.bodyLarge),
+                  Text(
+                    'Password',
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _passwordController,
@@ -182,7 +186,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: _isLoading
                           ? const Center(
-                              child: CircularProgressIndicator(color: Colors.white))
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
+                            )
                           : const Text(
                               'LOGIN',
                               textAlign: TextAlign.center,

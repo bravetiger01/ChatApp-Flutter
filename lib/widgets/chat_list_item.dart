@@ -31,17 +31,54 @@ class ChatListItem extends StatelessWidget {
       ),
       title: Text(
         chat.name,
-        style: Theme.of(context).textTheme.bodyLarge,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          fontWeight: chat.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+        ),
       ),
       subtitle: Text(
-        chat.lastMessage,
+        chat.lastMessage.isEmpty ? 'Say Hello ' : chat.lastMessage,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: chat.unreadCount > 0 ? Colors.white70 : AppTheme.textSecondary,
+          fontWeight: chat.unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
+        ),
       ),
-      trailing: Text(
-        _formatTime(chat.lastTime),
-        style: Theme.of(context).textTheme.bodySmall,
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _formatTime(chat.lastTime),
+            style: TextStyle(
+              fontSize: 12,
+              color: chat.unreadCount > 0
+                    ? AppTheme.primaryBlue
+                    : AppTheme.textSecondary,
+            ),
+          ),
+          if(chat.unreadCount > 0) ...[
+            const SizedBox(height: 4,),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryBlue,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                chat.unreadCount > 4
+                ? '4+'
+                : '${chat.unreadCount}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

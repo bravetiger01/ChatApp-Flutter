@@ -45,6 +45,9 @@ void main() async {
   // Listen for authentication state changes to handle token storage
   FirebaseAuth.instance.authStateChanges().listen((User? user) async {
     if (user != null) {
+      // fcmtoken = my address(device)
+      // Courier service = Firebase CLoud Messaging
+      // Package = Push Notification
       final fcmToken = await messaging.getToken();
       if (fcmToken != null) {
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
@@ -52,7 +55,7 @@ void main() async {
           'email': user.email,
           'fcmTokens': FieldValue.arrayUnion([fcmToken]),
           'lastUpdated': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        }, SetOptions(merge: true)); // merge:true means append fcm token in end. So we can send push notification to multiple devices
         print('FCM token stored for user ${user.uid}: $fcmToken');
       }
     }

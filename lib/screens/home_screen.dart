@@ -221,6 +221,7 @@ class _HomeScreenState extends State<HomeScreen> {
       stream: FirebaseFirestore.instance
           .collection('chats')
           .where('members', arrayContains: currentUser!.uid)
+          .orderBy('lastTime', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -250,6 +251,8 @@ class _HomeScreenState extends State<HomeScreen> {
               orElse: () => '',
             );
 
+            final unreadCount = (chatData['unreadCount_${currentUser!.uid}'] as int?) ?? 0;
+
             if (otherUserId.isEmpty) {
               return const ListTile(title: Text('Invalid chat data'));
             }
@@ -277,7 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   lastMessage: lastMessage,
                   lastTime: lastTime,
                   isOnline: false,
-                  unreadCount: 0,
+                  unreadCount: unreadCount,
                   otherUserId: otherUserId,
                   profilePicURL: profilePic,
                 );
