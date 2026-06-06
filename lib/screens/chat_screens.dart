@@ -36,9 +36,6 @@ class _ChatScreenState extends State<ChatScreen> {
   // Prefetched messages shown while the Firestore stream is connecting.
   List<CachedMessage> _cachedMessages = [];
   bool _cacheLoaded = false;
-  // Optimistic messages shown instantly while the server write is in-flight.
-  // Key: tempId, Value: message data map.
-  final Map<String, Map<String, dynamic>> _pendingMessages = {};
 
   @override
   void initState() {
@@ -57,8 +54,10 @@ class _ChatScreenState extends State<ChatScreen> {
       final chatId = message.data['chatId'];
       final otherUserId = message.data['otherUserId'];
       final otherUserName = message.data['otherUserName'] ?? 'Unknown';
-      if (chatId != null && ModalRoute.of(context)!.settings.arguments != null) {
-        final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+      if (chatId != null &&
+          ModalRoute.of(context)!.settings.arguments != null) {
+        final args =
+            ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
         if (args['chatId'] != chatId) {
           Navigator.pushReplacementNamed(
             context,
@@ -97,7 +96,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
+    final args =
+        ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
     if (args != null) {
       // Cache otherUserId so send methods can use it without parsing chatId.
       _otherUserId ??= args['otherUserId'] as String?;
@@ -114,9 +114,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
       if (!_hasResetUnreadCount && currentUser != null) {
         final chatId = args['chatId'] as String;
-        FirebaseFirestore.instance.collection('chats').doc(chatId).update({
-          'unreadCount_${currentUser!.uid}': 0,
-        }).catchError((e) => print('Error resetting unread count: $e'));
+        FirebaseFirestore.instance
+            .collection('chats')
+            .doc(chatId)
+            .update({'unreadCount_${currentUser!.uid}': 0})
+            .catchError((e) => print('Error resetting unread count: $e'));
         _hasResetUnreadCount = true;
       }
     }
@@ -128,6 +130,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollController.dispose();
     super.dispose();
   }
+
   // ── Shared message list renderer ─────────────────────────────
   // Used by both the prefetch-cache path (isLive: false) and the
   // live Firestore stream path (isLive: true).
@@ -136,14 +139,7 @@ class _ChatScreenState extends State<ChatScreen> {
     required String chatId,
     required bool isLive,
   }) {
-    // Pending (optimistic) bubbles are prepended so they sit at the
-    // bottom of the reversed list — newest messages first (index 0).
-    final pending = _pendingMessages.entries
-        .map((e) => (id: e.key, data: e.value))
-        .toList()
-        .reversed // oldest pending first → bottom of screen (index 0 in reversed list = bottom)
-        .toList();
-    final allItems = [...pending, ...items];
+    final allItems = items;
 
     return ListView.builder(
       controller: _scrollController,
@@ -153,7 +149,6 @@ class _ChatScreenState extends State<ChatScreen> {
       itemBuilder: (context, index) {
         final item = allItems[index];
         final messageData = item.data;
-        final isPending = messageData.containsKey('_tempId');
         final isMe = messageData['senderId'] == currentUser!.uid;
         final isEdited = messageData['isEdited'] ?? false;
         final fileUrl = messageData['fileUrl']?.toString();
@@ -162,38 +157,19 @@ class _ChatScreenState extends State<ChatScreen> {
 
         final message = MessageModel(
           message: messageData['text']?.toString() ?? '',
-          time: _formatTime((messageData['timestamp'] as Timestamp?)?.toDate()),
+          time: _formatTime((messageData['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now()),
           isMe: isMe,
           fileUrl: fileUrl,
           fileType: fileType,
           fileName: fileName,
         );
 
-        // Pending bubbles: slightly dimmed with a sending clock indicator.
         Widget bubble = MessageBubble(message: message, isEdited: isEdited);
-        if (isPending) {
-          bubble = Opacity(
-            opacity: 0.75,
-            child: Stack(
-              children: [
-                bubble,
-                Positioned(
-                  right: 12,
-                  bottom: 6,
-                  child: Icon(
-                    Icons.access_time_rounded,
-                    size: 12,
-                    color: Colors.white.withValues(alpha: 0.7),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
 
         return GestureDetector(
-          // Disable long-press on pending and stale-cache messages
-          onLongPress: (isLive && !isPending)
+          key: ValueKey(item.id),
+          // Disable long-press on stale-cache messages
+          onLongPress: (isLive)
               ? () {
                   if (isMe || fileUrl != null) {
                     _showMessageOptions(
@@ -226,19 +202,8 @@ class _ChatScreenState extends State<ChatScreen> {
     // 1. Clear field immediately — user feels instant response.
     _messageController.clear();
 
-    // 2. Add a temporary pending entry so the bubble appears now.
-    final tempId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
-    setState(() {
-      _pendingMessages[tempId] = {
-        'senderId': currentUser!.uid,
-        'text': messageText,
-        'timestamp': Timestamp.now(), // local estimate for sort order
-        'isEdited': false,
-        '_tempId': tempId,
-      };
-    });
-    // Scroll to bottom for the pending bubble.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    
+    
 
     try {
       // 3. Write the message — don't block the UI on this.
@@ -247,11 +212,11 @@ class _ChatScreenState extends State<ChatScreen> {
           .doc(chatId)
           .collection('messages')
           .add({
-        'senderId': currentUser!.uid,
-        'text': messageText,
-        'timestamp': FieldValue.serverTimestamp(),
-        'isEdited': false,
-      });
+            'senderId': currentUser!.uid,
+            'text': messageText,
+            'timestamp': FieldValue.serverTimestamp(),
+            'isEdited': false,
+          });
 
       // 4. Metadata update is fire-and-forget — no await needed.
       FirebaseFirestore.instance.collection('chats').doc(chatId).update({
@@ -261,16 +226,13 @@ class _ChatScreenState extends State<ChatScreen> {
         if (_otherUserId != null)
           'unreadCount_$_otherUserId': FieldValue.increment(1),
       });
-
-      // 5. Remove pending bubble — the stream snapshot now includes the real doc.
-      if (mounted) setState(() => _pendingMessages.remove(tempId));
     } catch (e) {
       // Remove optimistic bubble and show error on failure.
       if (mounted) {
-        setState(() => _pendingMessages.remove(tempId));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send: $e')),
-        );
+        
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to send: $e')));
       }
     }
   }
@@ -284,13 +246,13 @@ class _ChatScreenState extends State<ChatScreen> {
           .doc(chatId)
           .collection('messages')
           .add({
-        'senderId': currentUser!.uid,
-        'text': '',
-        'fileUrl': fileUrl,
-        'fileType': type,
-        'fileName': fileName, // Add file name to Firestore
-        'timestamp': FieldValue.serverTimestamp(),
-      });
+            'senderId': currentUser!.uid,
+            'text': '',
+            'fileUrl': fileUrl,
+            'fileType': type,
+            'fileName': fileName, // Add file name to Firestore
+            'timestamp': FieldValue.serverTimestamp(),
+          });
 
       await FirebaseFirestore.instance.collection('chats').doc(chatId).update({
         'lastMessage': type == 'image' ? 'Image' : 'Document',
@@ -301,15 +263,18 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     } catch (e) {
       print('Error sending file: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to send file: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to send file: $e')));
     }
   }
 
   Future<String> _uploadFile(File file, String type) async {
-    String fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
-    Reference storageRef = FirebaseStorage.instance.ref().child('chat_files/$type/$fileName');
+    String fileName =
+        '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
+    Reference storageRef = FirebaseStorage.instance.ref().child(
+      'chat_files/$type/$fileName',
+    );
     UploadTask uploadTask = storageRef.putFile(file);
     TaskSnapshot snapshot = await uploadTask;
     return await snapshot.ref.getDownloadURL();
@@ -323,19 +288,19 @@ class _ChatScreenState extends State<ChatScreen> {
           .collection('messages')
           .doc(messageId)
           .update({
-        'text': newText,
-        'isEdited': true,
-        'editedAt': FieldValue.serverTimestamp(),
-      });
-      
+            'text': newText,
+            'isEdited': true,
+            'editedAt': FieldValue.serverTimestamp(),
+          });
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Message updated successfully')),
       );
     } catch (e) {
       print('Error updating message: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update message: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update message: $e')));
     }
   }
 
@@ -347,31 +312,31 @@ class _ChatScreenState extends State<ChatScreen> {
           .collection('messages')
           .doc(messageId)
           .get();
-      
+
       if (messageDoc.exists) {
         final messageData = messageDoc.data() as Map<String, dynamic>;
         final fileUrl = messageData['fileUrl']?.toString();
-        
+
         if (fileUrl != null && fileUrl.isNotEmpty) {
           await _deleteFileFromStorage(fileUrl);
         }
       }
-      
+
       await FirebaseFirestore.instance
           .collection('chats')
           .doc(chatId)
           .collection('messages')
           .doc(messageId)
           .delete();
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Message deleted successfully')),
       );
     } catch (e) {
       print('Error deleting message: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete message: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to delete message: $e')));
     }
   }
 
@@ -401,7 +366,13 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _showMessageOptions(String messageId, String messageText, String chatId, {String? fileUrl, String? fileName}) {
+  void _showMessageOptions(
+    String messageId,
+    String messageText,
+    String chatId, {
+    String? fileUrl,
+    String? fileName,
+  }) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.cardBackground,
@@ -424,7 +395,10 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             if (fileUrl != null)
               ListTile(
-                leading: const Icon(Icons.download, color: AppTheme.primaryBlue),
+                leading: const Icon(
+                  Icons.download,
+                  color: AppTheme.primaryBlue,
+                ),
                 title: const Text('Download File'),
                 onTap: () {
                   Navigator.pop(context);
@@ -501,26 +475,28 @@ class _ChatScreenState extends State<ChatScreen> {
 
       final filePath = '${directory.path}/$fileName';
       final dio = Dio();
-      
+
       // Download the file
       await dio.download(
         fileUrl,
         filePath,
         onReceiveProgress: (received, total) {
           if (total != -1) {
-            print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
+            print(
+              'Download progress: ${(received / total * 100).toStringAsFixed(0)}%',
+            );
           }
         },
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('File downloaded to $filePath')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('File downloaded to $filePath')));
     } catch (e) {
       print('Error downloading file: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to download file: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to download file: $e')));
     }
   }
 
@@ -562,7 +538,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
+    final args =
+        ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
     if (args == null) {
       print('Error: No navigation arguments provided');
       return const Scaffold(
@@ -582,7 +559,10 @@ class _ChatScreenState extends State<ChatScreen> {
           icon: const Icon(Icons.arrow_back_ios),
         ),
         title: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance.collection('users').doc(otherUserId).snapshots(),
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(otherUserId)
+              .snapshots(),
           builder: (context, snapshot) {
             String profilePic = '';
             bool isOnline = false;
@@ -593,8 +573,11 @@ class _ChatScreenState extends State<ChatScreen> {
               print('ChatScreen user data for $otherUserId: $userData');
               profilePic = userData['profilePic']?.toString() ?? '';
               name = userData['name']?.toString() ?? otherUserName;
-              final lastActive = (userData['lastActive'] as Timestamp?)?.toDate();
-              isOnline = lastActive != null && DateTime.now().difference(lastActive).inMinutes < 5;
+              final lastActive = (userData['lastActive'] as Timestamp?)
+                  ?.toDate();
+              isOnline =
+                  lastActive != null &&
+                  DateTime.now().difference(lastActive).inMinutes < 5;
             } else {
               print('ChatScreen: No user data for $otherUserId');
             }
@@ -605,7 +588,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: profilePic.isEmpty ? AppTheme.cardBackground : null,
+                      backgroundColor: profilePic.isEmpty
+                          ? AppTheme.cardBackground
+                          : null,
                       child: profilePic.isNotEmpty
                           ? ClipOval(
                               child: CachedNetworkImage(
@@ -625,7 +610,11 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ),
                               ),
                             )
-                          : const Icon(Icons.person, color: Colors.white, size: 20),
+                          : const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                     ),
                     if (isOnline)
                       Positioned(
@@ -661,9 +650,11 @@ class _ChatScreenState extends State<ChatScreen> {
                       Text(
                         isOnline ? 'Online' : 'Offline',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontSize: 12,
-                              color: isOnline ? Colors.green : AppTheme.textSecondary,
-                            ),
+                          fontSize: 12,
+                          color: isOnline
+                              ? Colors.green
+                              : AppTheme.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -685,7 +676,11 @@ class _ChatScreenState extends State<ChatScreen> {
             onSelected: (value) {
               switch (value) {
                 case 'profile':
-                  Navigator.pushNamed(context, '/profile', arguments: {'userId': otherUserId});
+                  Navigator.pushNamed(
+                    context,
+                    '/profile',
+                    arguments: {'userId': otherUserId},
+                  );
                   break;
                 case 'media':
                   break;
@@ -791,7 +786,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
                 return _buildMessageList(
                   items: messages
-                      .map((d) => (id: d.id, data: d.data() as Map<String, dynamic>))
+                      .map(
+                        (d) =>
+                            (id: d.id, data: d.data() as Map<String, dynamic>),
+                      )
                       .toList(),
                   chatId: chatId,
                   isLive: true,
@@ -804,10 +802,7 @@ class _ChatScreenState extends State<ChatScreen> {
             decoration: const BoxDecoration(
               color: AppTheme.cardBackground,
               border: Border(
-                top: BorderSide(
-                  color: Color(0xFF3C3C3E),
-                  width: 0.5,
-                ),
+                top: BorderSide(color: Color(0xFF3C3C3E), width: 0.5),
               ),
             ),
             child: Row(
@@ -817,10 +812,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     onPressed: () {
                       _showAttachmentOptions(chatId);
                     },
-                    icon: const Icon(
-                      Icons.add,
-                      color: AppTheme.primaryBlue,
-                    ),
+                    icon: const Icon(Icons.add, color: AppTheme.primaryBlue),
                   ),
                 Expanded(
                   child: Container(
@@ -831,7 +823,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: TextField(
                       controller: _messageController,
                       decoration: InputDecoration(
-                        hintText: _isEditing ? 'Edit message...' : 'Type here...',
+                        hintText: _isEditing
+                            ? 'Edit message...'
+                            : 'Type here...',
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -930,12 +924,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   Colors.orange,
                   () {},
                 ),
-                _buildAttachmentOption(
-                  Icons.mic,
-                  'Audio',
-                  Colors.teal,
-                  () {},
-                ),
+                _buildAttachmentOption(Icons.mic, 'Audio', Colors.teal, () {}),
               ],
             ),
           ],
@@ -960,20 +949,11 @@ class _ChatScreenState extends State<ChatScreen> {
           Container(
             width: 50,
             height: 50,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              color: Colors.white,
-            ),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            child: Icon(icon, color: Colors.white),
           ),
           const SizedBox(height: 8),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
+          Text(label, style: Theme.of(context).textTheme.bodyMedium),
         ],
       ),
     );
