@@ -1,94 +1,66 @@
 # Sampark — Known Issues, Bugs & Vulnerabilities
 
-> Audit date: 2026-06-04  
-> Severity legend: 🔴 Critical · 🟠 High · 🟡 Medium · 🔵 Low / Polish
+> Audit date: 2026-06-04 · Last updated: 2026-06-06  
+> Severity legend: 🔴 Critical · 🟠 High · 🟡 Medium · 🔵 Low / Polish  
+> Status legend: ✅ Fixed · 🔧 Open
 
 ---
 
 ## 🔴 Critical
 
-### 1. Profile photo fetched on every screen rebuild
-**File:** `home_screen.dart` (L252–291)
+### ~~1. Profile photo fetched on every screen rebuild~~ ✅ Fixed
 
-`getUserData()` is called inside `FutureBuilder` that lives inside a `StreamBuilder`. Every Firestore snapshot event (new message, last-time update, etc.) tears down and rebuilds every `FutureBuilder`, re-fetching the profile photo URL for each chat item via a fresh Firestore read. Since `FutureBuilder` has no built-in caching, this causes N reads per snapshot (N = number of chats).
-
-**Same pattern in:** `chat_screens.dart` — the AppBar `StreamBuilder` re-downloads the profile image via `NetworkImage` on every user-document update.
-
-**Fix:** Cache user data in a `Map<String, Map<String,String>>` at the widget-state level, or introduce a `UserProvider`/`InheritedWidget`. Use `cached_network_image` (already in pubspec) for the avatar itself.
+> **Resolved 2026-06-05** — `_userCache: Map<String, Map<String, String>>` added to `_HomeScreenState`. `getUserData()` returns cached data on repeat calls, eliminating N Firestore reads per snapshot. `CachedNetworkImageProvider` (via `cached_network_image`) used in `ChatListItem` and `ChatScreen` AppBar so image bytes are never re-downloaded.
 
 ---
 
-### 2. Logout does not sign out from Firebase Auth
-**Files:** `home_screen.dart` (L89–91), `your_profile_screen.dart` (L378–384)
+### ~~2. Logout does not sign out from Firebase Auth~~ ✅ Fixed
 
-In `home_screen.dart` the logout menu calls `FirebaseAuth.instance.signOut()` then navigates to `'/'`. However `YourProfileScreen`'s logout only navigates to `/login` **without calling** `FirebaseAuth.instance.signOut()`, so the user is still authenticated and `AuthGate` will immediately redirect them back to Home.
-
-**Fix:** Call `await FirebaseAuth.instance.signOut()` before navigating in `_showLogoutDialog`.
+> **Resolved 2026-06-05** — Added `firebase_auth` import to `your_profile_screen.dart`. Logout button now calls `await FirebaseAuth.instance.signOut()` before navigating to `'/'` (AuthGate), with a `mounted` guard. Renamed dialog `context` parameter to `dialogContext` to eliminate shadowing.
 
 ---
 
-### 3. Unread-count logic uses chat ID string-splitting instead of known UID
-**File:** `chat_screens.dart` (L136–138)
+### ~~3. Unread-count logic uses chat ID string-splitting instead of known UID~~ ✅ Fixed
 
-```dart
-'unreadCount_${chatId.split('_').firstWhere((id) => id != currentUser!.uid)}':
-    FieldValue.increment(1),
-```
-
-This splits the chatId by `_` to guess the other user's UID. `firstWhere` will throw `StateError` if the UID is not found, and the pattern breaks entirely if the chat ID schema ever changes.
-
-**Fix:** Pass `otherUserId` directly (already available in scope) instead of parsing the chat ID.
+> **Resolved 2026-06-05** — Added `String? _otherUserId` to `_ChatScreenState`, populated from nav args in `didChangeDependencies()`. Both `_sendMessage` and `_sendFile` now reference `_otherUserId` directly instead of `chatId.split('_').firstWhere(...)`.
 
 ---
 
-### 4. No Firestore Security Rules — any authenticated user can read/write anything
-**Affected:** All Firestore collections
+### ~~4. No Firestore Security Rules — any authenticated user can read/write anything~~ ✅ Fixed
 
-Any authenticated user can: read all user documents (including FCM tokens), read all messages in any chat, write to any user's contact list.
-
-**Specific risks:**
-- FCM tokens are in plain text in the `users` collection, readable by anyone → enables sending push notifications to arbitrary users.
-- Message delete/edit is enforced only in the UI (`isMe` flag); any user can delete another user's messages via the Firestore API.
-
-**Fix:** Add and commit `firestore.rules`. At minimum: a user document is only writable by its owner; messages are only deletable/editable by the sender; chats are only readable by their members.
+> **Resolved 2026-06-05** — Created `firestore.rules` with ownership-based rules: users can only write their own profile; chats are readable only by their members; messages can only be edited/deleted by their sender; the `members` array is validated on chat creation. Registered in `firebase.json` under the `"firestore"` key. Deploy with `firebase deploy --only firestore:rules`.
 
 ---
 
 ## 🟠 High
 
-### 5. `YourProfileScreen` is fully hardcoded — saves nothing to the database
-**File:** `your_profile_screen.dart` (L24–27)
+### ~~5. `YourProfileScreen` is fully hardcoded — saves nothing to the database~~ ✅ Fixed
 
-```dart
-_nameController.text = 'Nitish kumar';
-_aboutController.text = 'I am Great';
-```
-
-The profile page is initialized with hardcoded test data and `_saveProfile()` only calls `Future.delayed` — it never writes to Firestore or Firebase Auth.
-
-**Fix:** Load from `FirebaseAuth.instance.currentUser` + Firestore in `initState`; persist changes on save.
+> **Resolved 2026-06-06** — Complete rewrite of `your_profile_screen.dart`:
+> - `_loadProfile()` fetches `name`, `about`, and `profilePic` from Firestore on `initState`.
+> - Email shown as read-only from `FirebaseAuth.instance.currentUser?.email`.
+> - `_saveProfile()` writes `name` and `about` (and optionally a new `profilePic` URL) to Firestore via `update()`.
+> - Loading spinner shown while the initial Firestore fetch is in-flight.
 
 ---
 
-### 6. `ProfileScreen` (contact view) is hardcoded with a developer's personal email
-**File:** `profile_screens.dart` (L57–73)
+### ~~6. `ProfileScreen` (contact view) is hardcoded with a developer's personal email~~ ✅ Fixed
 
-The "View Profile" screen always shows `nitish838@gmail.com` / `Nitish Kumar` regardless of which contact is being viewed. It doesn't accept navigation arguments.
-
-**Fix:** Accept a `userId` argument, load data from Firestore dynamically.
-
----
-
-### 7. Profile photo upload button in edit mode is a no-op
-**File:** `your_profile_screen.dart` (L98–119)
-
-The camera icon appears in edit mode inside a `Positioned` widget with no `GestureDetector`. Tapping it does nothing.
-
-**Fix:** Wrap in `GestureDetector`, implement `_pickAndUploadImage()` using `ImagePicker` + Firebase Storage (same pattern as `signup_screen.dart`).
+> **Resolved 2026-06-06** — Complete rewrite of `profile_screens.dart`:
+> - Accepts `{userId}` from `ModalRoute.settings.arguments`.
+> - `FutureBuilder` loads `name`, `email`, `about`, `profilePic`, and `lastActive` from Firestore for that user.
+> - Online status is computed from `lastActive` (< 5 min = online).
+> - Avatar uses `CachedNetworkImage` with fallback icon.
 
 ---
 
-### 8. Duplicate FCM listener — foreground notifications shown twice
+### ~~7. Profile photo upload button in edit mode is a no-op~~ ✅ Fixed
+
+> **Resolved 2026-06-06** — Camera icon in `YourProfileScreen` edit mode is now wrapped in a `GestureDetector`. Tapping it calls `_pickPhoto()` which uses `ImagePicker.gallery` with resize (500×500, 70% quality). A `FileImage` preview renders instantly. The upload happens on Save via `_uploadPhoto()` → Firebase Storage `profile_pics/{uid}.jpg` → Firestore `profilePic` field update.
+
+---
+
+### 8. Duplicate FCM listener — foreground notifications shown twice 🔧 Open
 **Files:** `chat_screens.dart` (L40–44), `main.dart` (L74–77)
 
 `FirebaseMessaging.onMessage` is subscribed in both `main.dart` and `ChatScreen.initState()`. When on the chat screen, notifications fire twice. The `ChatScreen` subscription is also never cancelled (no `StreamSubscription` stored for `dispose()`).
@@ -97,7 +69,7 @@ The camera icon appears in edit mode inside a `Positioned` widget with no `Gestu
 
 ---
 
-### 9. `_checkInitialMessage` calls Navigator inside `initState` — unsafe
+### 9. `_checkInitialMessage` calls Navigator inside `initState` — unsafe 🔧 Open
 **File:** `chat_screens.dart` (L67–85)
 
 `Navigator.pushReplacementNamed` is called asynchronously from `initState`. This can throw `"Navigator operation requested with a context that does not include a Navigator"` or cause build-phase errors.
@@ -106,7 +78,7 @@ The camera icon appears in edit mode inside a `Positioned` widget with no `Gestu
 
 ---
 
-### 10. `_generateChatId` method placed outside `_saveContact` but still inside the class — structural bug
+### 10. `_generateChatId` method placed outside `_saveContact` — structural bug 🔧 Open
 **File:** `new_contact_screen.dart` (L403–408)
 
 `_generateChatId` is placed after the closing brace of `_saveContact` and before `dispose()`. While it compiles correctly (still within the class), this is a misleading structure that suggests a scope error and confuses code readers/linters.
@@ -117,7 +89,7 @@ The camera icon appears in edit mode inside a `Positioned` widget with no `Gestu
 
 ## 🟡 Medium
 
-### 11. Time format bug — 13:30 shown instead of 1:30 PM
+### 11. Time format bug — 13:30 shown instead of 1:30 PM 🔧 Open
 **File:** `chat_screens.dart` (L753)
 
 ```dart
@@ -130,7 +102,7 @@ The camera icon appears in edit mode inside a `Positioned` widget with no `Gestu
 
 ---
 
-### 12. `AnimatedButton` loading guard is always bypassed
+### 12. `AnimatedButton` loading guard is always bypassed 🔧 Open
 **Files:** `login_screen.dart` (L175), `signup_screen.dart` (L382)
 
 ```dart
@@ -143,7 +115,7 @@ The lambda always fires; the inner ternary just discards null. Users can tap mul
 
 ---
 
-### 13. Long-press options allow deleting another user's file messages
+### 13. Long-press options allow deleting another user's file messages 🔧 Open
 **File:** `chat_screens.dart` (L660–669)
 
 ```dart
@@ -158,7 +130,7 @@ if (isMe || fileUrl != null) {
 
 ---
 
-### 14. `lastMessage` initialized to `'New chat started'` — shown in chat list
+### 14. `lastMessage` initialized to `'New chat started'` — shown in chat list 🔧 Open
 **Files:** `new_contact_screen.dart` (L374), `home_screen.dart` (L354)
 
 Misleading placeholder text shows in the chat list preview before any real message is sent.
@@ -167,7 +139,7 @@ Misleading placeholder text shows in the chat list preview before any real messa
 
 ---
 
-### 15. Download logic is duplicated in two files
+### 15. Download logic is duplicated in two files 🔧 Open
 **Files:** `chat_screens.dart` (L350–398), `message_bubble.dart` (L377–428)
 
 `_downloadFile` is implemented identically in both files. Any change must be applied twice.
@@ -176,7 +148,7 @@ Misleading placeholder text shows in the chat list preview before any real messa
 
 ---
 
-### 16. Input validator accepts whitespace-only names
+### 16. Input validator accepts whitespace-only names 🔧 Open
 **File:** `new_contact_screen.dart` (L110)
 
 `value.isEmpty` passes for `"   "` (spaces). The name is then `trim()`-ed to `''` and saved.
@@ -185,7 +157,7 @@ Misleading placeholder text shows in the chat list preview before any real messa
 
 ---
 
-### 17. Contacts tab never shows profile pictures
+### 17. Contacts tab never shows profile pictures 🔧 Open
 **File:** `home_screen.dart` (L327–331)
 
 Contacts always show a static icon; the `profilePic` stored in Firestore is ignored.
@@ -194,7 +166,7 @@ Contacts always show a static icon; the `profilePic` stored in Firestore is igno
 
 ---
 
-### 18. Notification ID can be `0` for all FCM messages without a message ID
+### 18. Notification ID can be `0` for all FCM messages without a message ID 🔧 Open
 **File:** `notification_service.dart` (L44–45)
 
 `message.messageId` can be `null`; `null.hashCode == 0`, so every such notification overwrites the previous one.
@@ -203,7 +175,7 @@ Contacts always show a static icon; the `profilePic` stored in Firestore is igno
 
 ---
 
-### 19. Call screen / buttons are non-functional stubs with no indicator
+### 19. Call screen / buttons are non-functional stubs with no indicator 🔧 Open
 **Files:** `home_screen.dart` (L376–378), `call_screen.dart`
 
 Video and audio call buttons navigate to an empty screen. No "coming soon" feedback is given.
@@ -214,21 +186,21 @@ Video and audio call buttons navigate to an empty screen. No "coming soon" feedb
 
 ## 🔵 Low / Polish
 
-### 20. `print()` statements leak UIDs, tokens, and file URLs in release builds
+### 20. `print()` statements leak UIDs, tokens, and file URLs in release builds 🔧 Open
 All files contain `print()` calls logging sensitive data readable via `adb logcat` on any device.
 
 **Fix:** Use a conditional logger or remove all `print` calls from release code.
 
 ---
 
-### 21. Password field uses a different `InputDecoration` style from email field
+### 21. Password field uses a different `InputDecoration` style from email field 🔧 Open
 **File:** `login_screen.dart` (L156–159)
 
 Email field uses the global theme; password field explicitly sets `border: OutlineInputBorder()`, causing visual inconsistency.
 
 ---
 
-### 22. `BottomNavigationBar` `currentIndex` is hardcoded to `0`
+### 22. `BottomNavigationBar` `currentIndex` is hardcoded to `0` 🔧 Open
 **File:** `home_screen.dart` (L164)
 
 The active tab indicator never moves when tapping nav bar items.
@@ -237,61 +209,76 @@ The active tab indicator never moves when tapping nav bar items.
 
 ---
 
-### 23. Bottom nav bar and top tab bar duplicate and contradict each other
+### 23. Bottom nav bar and top tab bar duplicate and contradict each other 🔧 Open
 **File:** `home_screen.dart`
 
 "Contacts" on the bottom nav goes to `/new-contact` (add contact); "Contacts" on the top tab shows the contacts list. Both claim to be the same feature.
 
 ---
 
-### 24. Camera icon in `NewContactScreen` is a decorative dead-end
+### 24. Camera icon in `NewContactScreen` is a decorative dead-end 🔧 Open
 **File:** `new_contact_screen.dart` (L77–99)
 
 Camera overlay has no gesture handler. No contact photo feature is implemented despite the UI affordance.
 
 ---
 
-### 25. `MessageType` enum defined but never used
+### 25. `MessageType` enum defined but never used 🔧 Open
 **File:** `chat_model.dart` (L45–50)
 
 `enum MessageType { text, image, audio, video }` is dead code.
 
 ---
 
-### 26. `AuthService` is bypassed in `signup_screen.dart`
+### 26. `AuthService` is bypassed in `signup_screen.dart` 🔧 Open
 **File:** `auth_service.dart` vs `signup_screen.dart`
 
 `AuthService.signUp` saves `{uid, email, name, createdAt}`. `signup_screen.dart` saves `{name, email, profilePic, lastActive}` directly. The two Firestore schemas are inconsistent — `uid` is missing from the signup path; `profilePic` and `lastActive` are missing from the service.
 
 ---
 
+## ➕ Additional Fix (not in original audit)
+
+### ~~A. Message send/receive delay (~4 seconds)~~ ✅ Fixed
+
+> **Resolved 2026-06-05** — Implemented optimistic UI in `_sendMessage`:
+> 1. Text field cleared immediately on tap.
+> 2. Message added to `_pendingMessages` map and rendered instantly (75% opacity + clock icon).
+> 3. Firestore `add()` runs in the background; the metadata `update()` (lastMessage/unreadCount) is now fire-and-forget (no `await`), eliminating the second sequential round-trip.
+> 4. Pending bubble removed when the live stream confirms the real document.
+>
+> Also added `MessageCache` prefetch service: last 30 messages per chat are fetched in the background when the home screen loads, so `ChatScreen` opens instantly from cache.
+
+---
+
 ## Summary Table
 
-| # | Severity | Category | File(s) |
-|---|---|---|---|
-| 1 | 🔴 | Performance | `home_screen.dart`, `chat_screens.dart` |
-| 2 | 🔴 | Auth / Security | `your_profile_screen.dart` |
-| 3 | 🔴 | Logic Bug | `chat_screens.dart` |
-| 4 | 🔴 | Security | Firestore Rules (missing) |
-| 5 | 🟠 | Functionality | `your_profile_screen.dart` |
-| 6 | 🟠 | Functionality | `profile_screens.dart` |
-| 7 | 🟠 | Functionality | `your_profile_screen.dart` |
-| 8 | 🟠 | Memory Leak | `chat_screens.dart`, `main.dart` |
-| 9 | 🟠 | Crash Risk | `chat_screens.dart` |
-| 10 | 🟠 | Code Structure | `new_contact_screen.dart` |
-| 11 | 🟡 | Display Bug | `chat_screens.dart` |
-| 12 | 🟡 | UX / Logic | `login_screen.dart`, `signup_screen.dart` |
-| 13 | 🟡 | Logic Bug | `chat_screens.dart` |
-| 14 | 🟡 | UX | `new_contact_screen.dart`, `home_screen.dart` |
-| 15 | 🟡 | Maintainability | `chat_screens.dart`, `message_bubble.dart` |
-| 16 | 🟡 | Validation | `new_contact_screen.dart` |
-| 17 | 🟡 | UI | `home_screen.dart` |
-| 18 | 🟡 | Crash Risk | `notification_service.dart` |
-| 19 | 🟡 | UX | `home_screen.dart`, `call_screen.dart` |
-| 20 | 🔵 | Security | All files |
-| 21 | 🔵 | UI Consistency | `login_screen.dart` |
-| 22 | 🔵 | UI | `home_screen.dart` |
-| 23 | 🔵 | UX | `home_screen.dart` |
-| 24 | 🔵 | UX | `new_contact_screen.dart` |
-| 25 | 🔵 | Code Quality | `chat_model.dart` |
-| 26 | 🔵 | Architecture | `auth_service.dart`, `signup_screen.dart` |
+| # | Severity | Category | File(s) | Status |
+|---|---|---|---|---|
+| 1 | 🔴 | Performance | `home_screen.dart`, `chat_screens.dart` | ✅ Fixed |
+| 2 | 🔴 | Auth / Security | `your_profile_screen.dart` | ✅ Fixed |
+| 3 | 🔴 | Logic Bug | `chat_screens.dart` | ✅ Fixed |
+| 4 | 🔴 | Security | Firestore Rules | ✅ Fixed |
+| 5 | 🟠 | Functionality | `your_profile_screen.dart` | ✅ Fixed |
+| 6 | 🟠 | Functionality | `profile_screens.dart` | ✅ Fixed |
+| 7 | 🟠 | Functionality | `your_profile_screen.dart` | ✅ Fixed |
+| A | ➕ | Performance / UX | `chat_screens.dart`, `message_cache.dart` | ✅ Fixed |
+| 8 | 🟠 | Memory Leak | `chat_screens.dart`, `main.dart` | 🔧 Open |
+| 9 | 🟠 | Crash Risk | `chat_screens.dart` | 🔧 Open |
+| 10 | 🟠 | Code Structure | `new_contact_screen.dart` | 🔧 Open |
+| 11 | 🟡 | Display Bug | `chat_screens.dart` | 🔧 Open |
+| 12 | 🟡 | UX / Logic | `login_screen.dart`, `signup_screen.dart` | 🔧 Open |
+| 13 | 🟡 | Logic Bug | `chat_screens.dart` | 🔧 Open |
+| 14 | 🟡 | UX | `new_contact_screen.dart`, `home_screen.dart` | 🔧 Open |
+| 15 | 🟡 | Maintainability | `chat_screens.dart`, `message_bubble.dart` | 🔧 Open |
+| 16 | 🟡 | Validation | `new_contact_screen.dart` | 🔧 Open |
+| 17 | 🟡 | UI | `home_screen.dart` | 🔧 Open |
+| 18 | 🟡 | Crash Risk | `notification_service.dart` | 🔧 Open |
+| 19 | 🟡 | UX | `home_screen.dart`, `call_screen.dart` | 🔧 Open |
+| 20 | 🔵 | Security | All files | 🔧 Open |
+| 21 | 🔵 | UI Consistency | `login_screen.dart` | 🔧 Open |
+| 22 | 🔵 | UI | `home_screen.dart` | 🔧 Open |
+| 23 | 🔵 | UX | `home_screen.dart` | 🔧 Open |
+| 24 | 🔵 | UX | `new_contact_screen.dart` | 🔧 Open |
+| 25 | 🔵 | Code Quality | `chat_model.dart` | 🔧 Open |
+| 26 | 🔵 | Architecture | `auth_service.dart`, `signup_screen.dart` | 🔧 Open |
