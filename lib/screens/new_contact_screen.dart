@@ -228,7 +228,7 @@ class _NewContactScreenState extends State<NewContactScreen> {
           return;
         }
 
-        final email = _emailController.text.trim();
+        final email = _emailController.text.trim().toLowerCase();
 
         // Query Firestore to find the user by email
         final userQuery = await FirebaseFirestore.instance
