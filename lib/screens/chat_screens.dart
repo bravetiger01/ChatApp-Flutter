@@ -94,6 +94,30 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  String _formatDateLabel(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+
+    if (date == today) return 'Today';
+    if (date == yesterday) return 'Yesterday';
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
 
   // Flutter lifecycle method
   // This didChangeDependencies() method is doing 3 major things in chat screen:
@@ -148,13 +172,65 @@ class _ChatScreenState extends State<ChatScreen> {
   }) {
     final allItems = items;
 
+    final List<Map<String, dynamic>> displayItems = [];
+    for (int i = 0; i < allItems.length; i++) {
+      // Always add the current message
+      displayItems.add({'type': 'message', 'item': allItems[i]});
+
+      // Get the message's data
+      final ts =
+          (allItems[i].data['timestamp'] as Timestamp?)?.toDate() ??
+          DateTime.now();
+      final msgDate = DateTime(ts.year, ts.month, ts.day);
+
+      // Decide if we need a separator
+      bool needsSeparator;
+      if (i + 1 < allItems.length) {
+        // There is a next (older) message - compare dates
+        final nextTs =
+            (allItems[i + 1].data['timestamp'] as Timestamp?)?.toDate() ??
+            DateTime.now();
+        final nextDate = DateTime(nextTs.year, nextTs.month, nextTs.day);
+        needsSeparator = msgDate != nextDate; //different date -> add separator
+      } else {
+        // This is the oldest message -> add separator always
+        needsSeparator = true;
+      }
+
+      if (needsSeparator) {
+        displayItems.add({'type': 'separator', 'date': msgDate});
+      }
+    }
+
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
       reverse: true,
       itemCount: allItems.length,
       itemBuilder: (context, index) {
-        final item = allItems[index];
+        final displayItem = displayItems[index];
+        if (displayItem['type'] == 'separator') {
+          // Show the date chip
+          final date = displayItem['date'] as DateTime;
+          return Center(
+            key: ValueKey('sep_${date.toIso8601String()}'),
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _formatDateLabel(date),
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+          );
+        }
+
+        final item =
+            (displayItem['item'] as ({String id, Map<String, dynamic> data}));
         final messageData = item.data;
         final isMe = messageData['senderId'] == currentUser!.uid;
         final isEdited = messageData['isEdited'] ?? false;
@@ -164,7 +240,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
         final message = MessageModel(
           message: messageData['text']?.toString() ?? '',
-          time: _formatTime((messageData['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now()),
+          time: _formatTime(
+            (messageData['timestamp'] as Timestamp?)?.toDate() ??
+                DateTime.now(),
+          ),
           isMe: isMe,
           fileUrl: fileUrl,
           fileType: fileType,
@@ -209,7 +288,6 @@ class _ChatScreenState extends State<ChatScreen> {
     // 1. Clear field immediately — user feels instant response.
     _messageController.clear();
 
-
     try {
       // 3. Write the message — don't block the UI on this.
       await FirebaseFirestore.instance
@@ -234,7 +312,6 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       // Remove optimistic bubble and show error on failure.
       if (mounted) {
-        
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Failed to send: $e')));
@@ -866,16 +943,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String _formatTime(DateTime? time) {
     if (time == null) return '';
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final date = DateTime(time.year, time.month, time.day);
-    if (date == today) {
-      return '${time.hour}:${time.minute.toString().padLeft(2, '0')} ${time.hour >= 12 ? 'PM' : 'AM'}';
-    } else if (date == DateTime(now.year, now.month, now.day - 1)) {
-      return 'Yesterday';
-    } else {
-      return '${time.day}/${time.month}/${time.year % 100}';
-    }
+    final hour = time.hour == 0
+        ? 12
+        : (time.hour > 12 ? time.hour - 12 : time.hour);
+    final period = time.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:${time.minute.toString().padLeft(2, '0')} $period';
   }
 
   void _showAttachmentOptions(String chatId) {
