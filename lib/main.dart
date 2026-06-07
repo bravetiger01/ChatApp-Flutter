@@ -1,4 +1,4 @@
-import 'package:chat_app/screens/signup_screen.dart';
+import 'package:Sampark/screens/signup_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
