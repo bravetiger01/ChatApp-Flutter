@@ -73,6 +73,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  // if the app was launched because the user tapped a notification
   void _checkInitialMessage() async {
     final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
     if (initialMessage != null) {
@@ -93,6 +94,12 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+
+  // Flutter lifecycle method
+  // This didChangeDependencies() method is doing 3 major things in chat screen:
+  // 1. Getting data passed from navigation
+  // 2. Loading cached messages instantly
+  // 3. Resetting unread message count when user opens chat
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -202,8 +209,6 @@ class _ChatScreenState extends State<ChatScreen> {
     // 1. Clear field immediately — user feels instant response.
     _messageController.clear();
 
-    
-    
 
     try {
       // 3. Write the message — don't block the UI on this.

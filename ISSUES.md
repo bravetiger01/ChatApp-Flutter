@@ -1,6 +1,6 @@
 # Sampark — Known Issues, Bugs & Vulnerabilities
 
-> Audit date: 2026-06-04 · Last updated: 2026-06-06  
+> Audit date: 2026-06-04 · Last updated: 2026-06-07  
 > Severity legend: 🔴 Critical · 🟠 High · 🟡 Medium · 🔵 Low / Polish  
 > Status legend: ✅ Fixed · 🔧 Open
 
@@ -251,7 +251,38 @@ Camera overlay has no gesture handler. No contact photo feature is implemented d
 
 ---
 
-## Summary Table
+## 🟠 High — New Contact Screen Audit (2026-06-07)
+
+### 27. Contact name & about are saved from the form, not from the real user's profile 🔧 Open
+**File:** `new_contact_screen.dart` (L358–361)
+
+When you add a contact, `name` and `about` written to `users/{currentUid}/contacts/{otherUserId}` come from whatever the adding user typed into the form — not from the actual user's Firestore profile. This means:
+- A contact can be saved with a completely wrong name.
+- The `about` field saved here is never read by any screen (chat list and profile screen both read from `users/{otherUserId}/about` directly).
+- The form's `About` field is a data-entry dead-end.
+
+**Fix:** After the email lookup succeeds, read `name`, `about`, and `profilePic` from `otherUser.data()` and use those values instead of form inputs. Remove the `Name` and `About` fields from the form entirely — the email lookup is sufficient.
+
+---
+
+### 28. Contact creation is one-directional — the other user gets no record 🔧 Open
+**File:** `new_contact_screen.dart` (L351–362)
+
+When User A adds User B, only `users/A/contacts/B` is created. User B gets no corresponding `users/B/contacts/A` entry. The chat document is shared (both are in `members[]`), so the chat appears on both sides — but the contacts list for User B has no entry for User A, which is an inconsistent state.
+
+**Fix:** After saving `users/A/contacts/B`, also write `users/B/contacts/A` in the same batch so both sides are symmetrical.
+
+---
+
+### 29. Email lookup is case-sensitive — registration vs. search case mismatch silently fails 🔧 Open
+**File:** `new_contact_screen.dart` (L295–299)
+
+Firebase Auth normalizes emails to lowercase on sign-up. However, the email stored in Firestore's `users` collection is written directly from the signup form with no normalization guarantee. The contact-search query uses `isEqualTo: email` (exact match). If the user types `User@Gmail.com` but it was stored as `user@gmail.com`, the query returns empty and shows "No user found" even though the user exists.
+
+**Fix:** Normalize the search email with `.toLowerCase()` before the Firestore query: `final email = _emailController.text.trim().toLowerCase();`. Also normalize on signup.
+
+---
+
 
 | # | Severity | Category | File(s) | Status |
 |---|---|---|---|---|
@@ -282,3 +313,6 @@ Camera overlay has no gesture handler. No contact photo feature is implemented d
 | 24 | 🔵 | UX | `new_contact_screen.dart` | 🔧 Open |
 | 25 | 🔵 | Code Quality | `chat_model.dart` | 🔧 Open |
 | 26 | 🔵 | Architecture | `auth_service.dart`, `signup_screen.dart` | 🔧 Open |
+| 27 | 🟠 | Data Integrity | `new_contact_screen.dart` | 🔧 Open |
+| 28 | 🟠 | Data Integrity | `new_contact_screen.dart` | 🔧 Open |
+| 29 | 🟡 | Logic Bug | `new_contact_screen.dart` | 🔧 Open |
