@@ -268,6 +268,16 @@ class _NewContactScreenState extends State<NewContactScreen> {
           });
           return;
         }
+        
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .get();
+
+        final userData = userDoc.data() as Map<String, dynamic>?;
+        final userName = userData?['name'];
+        final userAbout = userData?['about'];
+
 
         // Check if contact already exists
         final contactDoc = await FirebaseFirestore.instance
@@ -290,18 +300,37 @@ class _NewContactScreenState extends State<NewContactScreen> {
           return;
         }
 
-        // Save contact to the current user's contacts subcollection
-        await FirebaseFirestore.instance
+        // 1. Get a batch object from Firestore
+        final batch = FirebaseFirestore.instance.batch();
+
+        // 2. Reference the two document locations
+        final currentUserContactRef = FirebaseFirestore.instance
             .collection('users')
             .doc(currentUser.uid)
             .collection('contacts')
+            .doc(otherUserId);
+
+        batch.set(currentUserContactRef, {
+          'name': otherUserName,
+          'email': email,
+          'about': otherUserAbout,
+          'addedAt': FieldValue.serverTimestamp(),
+        });
+
+        final otherUserContactRef = FirebaseFirestore.instance
+            .collection('users')
             .doc(otherUserId)
-            .set({
-              'name': otherUserName,
-              'email': email,
-              'about': otherUserAbout,
-              'addedAt': FieldValue.serverTimestamp(),
-            });
+            .collection('contacts')
+            .doc(currentUser.uid);
+
+        batch.set(otherUserContactRef, {
+          'name': userName,
+          'email': currentUser.email,
+          'about': userAbout,
+          'addedAt': FieldValue.serverTimestamp(),
+        });
+
+        await batch.commit();
 
         // Create a new chat
         final chatId = _generateChatId(currentUser.uid, otherUserId);
