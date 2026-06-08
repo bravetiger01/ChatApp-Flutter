@@ -57,6 +57,7 @@ exports.sendChatNotification = onDocumentCreated(
         },
         data: {
           chatId: chatId,
+          senderId: senderId,
           otherUserId: senderId,
           otherUserName: senderName,
           click_action: "FLUTTER_NOTIFICATION_CLICK",

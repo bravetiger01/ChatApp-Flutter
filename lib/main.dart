@@ -17,8 +17,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'services/notification_service.dart';
 
-
-
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   print('Background message: ${message.data}');
@@ -36,11 +34,7 @@ void main() async {
 
   // Request notification permissions
   final messaging = FirebaseMessaging.instance;
-  await messaging.requestPermission(
-    alert: true,
-    badge: true,
-    sound: true,
-  );
+  await messaging.requestPermission(alert: true, badge: true, sound: true);
 
   // Listen for authentication state changes to handle token storage
   FirebaseAuth.instance.authStateChanges().listen((User? user) async {
@@ -50,12 +44,15 @@ void main() async {
       // Package = Push Notification
       final fcmToken = await messaging.getToken();
       if (fcmToken != null) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'name': user.displayName ?? 'Unknown',
-          'email': user.email,
-          'fcmTokens': FieldValue.arrayUnion([fcmToken]),
-          'lastUpdated': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true)); // merge:true means append fcm token in end. So we can send push notification to multiple devices
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+          {
+            'name': user.displayName ?? 'Unknown',
+            'email': user.email,
+            'fcmTokens': FieldValue.arrayUnion([fcmToken]),
+            'lastUpdated': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        ); // merge:true means append fcm token in end. So we can send push notification to multiple devices
         print('FCM token stored for user ${user.uid}: $fcmToken');
       }
     }
@@ -75,6 +72,7 @@ void main() async {
 
   // Foreground message handler
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    if (message.data['senderId'] == FirebaseAuth.instance.currentUser?.uid) return;
     print('Foreground message received: ${message.data}');
     NotificationService.showNotification(message);
   });
@@ -84,8 +82,6 @@ void main() async {
 
 class SamParkApp extends StatelessWidget {
   const SamParkApp({super.key});
-
-  
 
   @override
   Widget build(BuildContext context) {

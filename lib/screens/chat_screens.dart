@@ -45,10 +45,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _setupNotifications() {
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('Foreground message: ${message.data}');
-      NotificationService.showNotification(message);
-    });
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       final chatId = message.data['chatId'];
