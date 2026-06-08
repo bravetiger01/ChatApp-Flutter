@@ -13,8 +13,8 @@ import '../utils/app_theme.dart';
 import '../widgets/message_bubble.dart';
 import '../models/chat_model.dart';
 import '../services/message_cache.dart';
-import '../services/notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:Sampark/services/file_download.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -444,6 +444,24 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  String _getFileNameFromUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final segments = uri.pathSegments;
+      if (segments.isNotEmpty) {
+        final fileName = segments.last;
+        final parts = fileName.split('_');
+        if (parts.length > 1) {
+          return parts.sublist(1).join('_');
+        }
+        return fileName;
+      }
+      return 'Unknown File';
+    } catch (e) {
+      return 'Unknown File';
+    }
+  }
+
   void _showMessageOptions(
     String messageId,
     String messageText,
@@ -480,7 +498,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 title: const Text('Download File'),
                 onTap: () {
                   Navigator.pop(context);
-                  _downloadFile(fileUrl, fileName ?? 'downloaded_file');
+                  FileDownloadService.downloadFile(context, fileUrl, fileName ?? _getFileNameFromUrl(fileUrl));
                 },
               ),
             ListTile(
@@ -526,58 +544,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Future<void> _downloadFile(String fileUrl, String fileName) async {
-    try {
-      // Request storage permission
-      if (Platform.isAndroid) {
-        var status = await Permission.storage.request();
-        if (!status.isGranted) {
-          status = await Permission.manageExternalStorage.request();
-          if (!status.isGranted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Storage permission denied')),
-            );
-            return;
-          }
-        }
-      }
-
-      // Get the downloads directory
-      final directory = await getDownloadsDirectory();
-      if (directory == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unable to access downloads directory')),
-        );
-        return;
-      }
-
-      final filePath = '${directory.path}/$fileName';
-      final dio = Dio();
-
-      // Download the file
-      await dio.download(
-        fileUrl,
-        filePath,
-        onReceiveProgress: (received, total) {
-          if (total != -1) {
-            print(
-              'Download progress: ${(received / total * 100).toStringAsFixed(0)}%',
-            );
-          }
-        },
-      );
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('File downloaded to $filePath')));
-    } catch (e) {
-      print('Error downloading file: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to download file: $e')));
-    }
-  }
-
+  
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(

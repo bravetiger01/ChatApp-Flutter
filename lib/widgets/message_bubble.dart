@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:path/path.dart' as path;
 import '../utils/app_theme.dart';
 import '../models/chat_model.dart';
-import 'dart:io';
+import '../services/file_download.dart';
 
 class MessageBubble extends StatelessWidget {
   final MessageModel message;
@@ -158,7 +155,7 @@ class MessageBubble extends StatelessWidget {
                     ),
                     child: IconButton(
                       icon: const Icon(Icons.download, color: Colors.white, size: 20),
-                      onPressed: () => _downloadFile(context),
+                      onPressed: () => FileDownloadService.downloadFile(context, message.fileUrl!, message.fileName ?? _getFileNameFromUrl(message.fileUrl!)),
                       padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                     ),
@@ -252,7 +249,7 @@ class MessageBubble extends StatelessWidget {
                     Icons.download,
                     color: message.isMe ? Colors.white : AppTheme.textSecondary,
                   ),
-                  onPressed: () => _downloadFile(context),
+                  onPressed: () => FileDownloadService.downloadFile(context, message.fileUrl!, message.fileName ?? _getFileNameFromUrl(message.fileUrl!)),
                 ),
             ],
           ),
@@ -374,59 +371,6 @@ class MessageBubble extends StatelessWidget {
     }
   }
 
-  Future<void> _downloadFile(BuildContext context) async {
-    try {
-      // Request storage permission for Android
-      if (Platform.isAndroid) {
-        var status = await Permission.storage.request();
-        if (!status.isGranted) {
-          status = await Permission.manageExternalStorage.request();
-          if (!status.isGranted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Storage permission denied')),
-            );
-            return;
-          }
-        }
-      }
-
-      // Use fileName from MessageModel if available, else fallback to URL parsing
-      final fileName = message.fileName ?? _getFileNameFromUrl(message.fileUrl!);
-
-      // Get the downloads directory
-      final directory = await getDownloadsDirectory();
-      if (directory == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unable to access downloads directory')),
-        );
-        return;
-      }
-
-      final filePath = '${directory.path}/$fileName';
-      final dio = Dio();
-
-      // Download the file
-      await dio.download(
-        message.fileUrl!,
-        filePath,
-        onReceiveProgress: (received, total) {
-          if (total != -1) {
-            print('Download progress: ${(received / total * 100).toStringAsFixed(0)}%');
-          }
-        },
-      );
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('File downloaded to $filePath')),
-      );
-    } catch (e) {
-      print('Error downloading file: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to download file: $e')),
-      );
-    }
-  }
-
   void _showImageFullscreen(BuildContext context) {
     Navigator.push(
       context,
@@ -444,7 +388,7 @@ class MessageBubble extends StatelessWidget {
               if (!message.isMe)
                 IconButton(
                   icon: const Icon(Icons.download, color: Colors.white),
-                  onPressed: () => _downloadFile(context),
+                  onPressed: () => FileDownloadService.downloadFile(context, message.fileUrl!, message.fileName ?? _getFileNameFromUrl(message.fileUrl!)),
                 ),
             ],
           ),
