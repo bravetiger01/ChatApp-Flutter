@@ -8,7 +8,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-
 class CallScreen extends StatefulWidget {
   const CallScreen({super.key});
 
@@ -64,6 +63,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       });
       // Starting Engine
       _initAgora();
+      _startFirebaseSignaling();
     });
   }
 
@@ -125,6 +125,40 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         }
       });
     });
+  }
+
+  // The Ringing Signal (Initiating the Call)
+  Future<void> _startFirebaseSignaling() async {
+    if (isCaller) {
+      final currentUser = FirebaseAuth.instance.currentUser;
+
+      // 1. Create the call document to make the other person's phone ring
+      await FirebaseFirestore.instance
+          .collection('calls')
+          .doc(channelName)
+          .set({
+            'callerId': currentUser!.uid,
+            'callerName': currentUser.displayName ?? 'Unknown',
+            'recieverId': recieverId,
+            'status': 'ringing',
+            'channelId': channelName,
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+
+      // 2. Listen to if they reject the call
+      FirebaseFirestore.instance
+          .collection('calls')
+          .doc(channelName)
+          .snapshots()
+          .listen((snapshots) {
+            if (snapshots.exists) {
+              final data = snapshots.data() as Map<String, dynamic>;
+              if (data['status'] == 'rejected') {
+                _endCall();
+              }
+            }
+          });
+    }
   }
 
   String _formatDuration(int seconds) {
@@ -360,6 +394,15 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
     // Show end call animation or navigate back
     Navigator.pop(context);
+    if (isCaller) {
+      // If we called them, delete the ringing document to stop their phone
+      FirebaseFirestore.instance.collection('calls').doc(channelName).delete();
+    } else {
+      // If we recieved the call and hang up, we just update the status so caller knows
+      FirebaseFirestore.instance.collection('calls').doc(channelName).update({
+        'status': 'ended',
+      });
+    }
   }
 
   void _showDialpad() {
@@ -472,7 +515,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   void dispose() {
     _callTimer.cancel();
     _pulseController.dispose();
-    
+
     // Destroying engine to release memory
     _engine.leaveChannel();
     _engine.release();
