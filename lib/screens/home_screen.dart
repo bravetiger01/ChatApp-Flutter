@@ -1,3 +1,5 @@
+import 'dart:nativewrappers/_internal/vm/lib/ffi_allocation_patch.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -5,6 +7,7 @@ import '../utils/app_theme.dart';
 import '../widgets/chat_list_item.dart';
 import '../models/chat_model.dart';
 import '../services/message_cache.dart';
+import 'dart:async';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,9 +20,104 @@ class _HomeScreenState extends State<HomeScreen> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
   String _selectedTab = 'Chats';
 
+  // To keep track of our call listner
+  StreamSubscription<QuerySnapshot>? _callSubscription;
+
   // Cache user data to avoid re-fetching on every StreamBuilder rebuild.
   // Key: uid, Value: {name, profilePic}
   final Map<String, Map<String, String>> _userCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _listenForIncomingCalls();
+  }
+
+  @override
+  void dispose() {
+    _callSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenForIncomingCalls() {
+    if (currentUser == null) return;
+
+    // Listen to calls collection where we are reciever and it's ringing
+    _callSubscription = FirebaseFirestore.instance
+        .collection('calls')
+        .where('recieverId', isEqualTo: currentUser?.uid)
+        .where('status', isEqualTo: 'ringing')
+        .snapshots()
+        .listen((snapshot) {
+          for (var change in snapshot.docChanges) {
+            if (change.type == DocumentChangeType.added) {
+              final callData = change.doc.data() as Map<String, dynamic>;
+              _showIncomingCallDialog(callData, change.doc.id);
+            }
+          }
+        });
+  }
+
+  void _showIncomingCallDialog(
+    Map<String, dynamic> callData,
+    String callDocId,
+  ) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF2A2D3A),
+          title: const Text(
+            'Incoming Call',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: Text(
+            '${callData['callerName']} is calling you!',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                // Decline
+                FirebaseFirestore.instance
+                    .collection('calls')
+                    .doc(callDocId)
+                    .update({'status': 'rejected'});
+                Navigator.pop(context);
+              },
+              child: const Text('Decline', style: TextStyle(color: Colors.red)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              onPressed: () {
+                // Accept
+                FirebaseFirestore.instance
+                    .collection('calls')
+                    .doc(callDocId)
+                    .update({'status': 'accepted'});
+                Navigator.pop(context); //Close dialog
+                Navigator.pushNamed(
+                  context,
+                  '/call',
+                  arguments: {
+                    'chatId': callData['channelId'],
+                    'recieverId': currentUser!.uid,
+                    'recieverName': callData['callerName'],
+                    'isCaller': false,
+                  },
+                );
+              },
+              child: const Text(
+                'Accept',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   Future<Map<String, String>> getUserData(String uid) async {
     if (_userCache.containsKey(uid)) {
@@ -32,8 +130,14 @@ class _HomeScreenState extends State<HomeScreen> {
           .get();
       final data = userDoc.exists
           ? {
-              'name': (userDoc.data() as Map<String, dynamic>)['name']?.toString() ?? 'Unknown',
-              'profilePic': (userDoc.data() as Map<String, dynamic>)['profilePic']?.toString() ?? '',
+              'name':
+                  (userDoc.data() as Map<String, dynamic>)['name']
+                      ?.toString() ??
+                  'Unknown',
+              'profilePic':
+                  (userDoc.data() as Map<String, dynamic>)['profilePic']
+                      ?.toString() ??
+                  '',
             }
           : {'name': 'Unknown', 'profilePic': ''};
       _userCache[uid] = data;
@@ -73,9 +177,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               'Sampark',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: AppTheme.accentOrange,
-                    fontSize: 20,
-                  ),
+                color: AppTheme.accentOrange,
+                fontSize: 20,
+              ),
             ),
           ],
         ),
@@ -155,8 +259,8 @@ class _HomeScreenState extends State<HomeScreen> {
             child: _selectedTab == 'Chats'
                 ? _buildChatsList()
                 : _selectedTab == 'Contacts'
-                    ? _buildContactsList()
-                    : _buildCallsList(),
+                ? _buildContactsList()
+                : _buildCallsList(),
           ),
         ],
       ),
@@ -185,7 +289,10 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chats'),
-          BottomNavigationBarItem(icon: Icon(Icons.contacts), label: 'Contacts'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.contacts),
+            label: 'Contacts',
+          ),
           BottomNavigationBarItem(icon: Icon(Icons.call), label: 'Calls'),
         ],
       ),
@@ -229,7 +336,9 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         if (snapshot.hasError) {
           print('Error in chats StreamBuilder: ${snapshot.error}');
-          return const Center(child: Text('Failed to load chats. Please try again.'));
+          return const Center(
+            child: Text('Failed to load chats. Please try again.'),
+          );
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return const Center(child: Text('No chats available'));
@@ -245,13 +354,15 @@ class _HomeScreenState extends State<HomeScreen> {
             final members = List<String>.from(chatData['members'] ?? []);
             final lastMessage = chatData['lastMessage'] ?? '';
             final lastTime =
-                (chatData['lastTime'] as Timestamp?)?.toDate() ?? DateTime.now();
+                (chatData['lastTime'] as Timestamp?)?.toDate() ??
+                DateTime.now();
             final otherUserId = members.firstWhere(
               (uid) => uid != currentUser!.uid,
               orElse: () => '',
             );
 
-            final unreadCount = (chatData['unreadCount_${currentUser!.uid}'] as int?) ?? 0;
+            final unreadCount =
+                (chatData['unreadCount_${currentUser!.uid}'] as int?) ?? 0;
 
             if (otherUserId.isEmpty) {
               return const ListTile(title: Text('Invalid chat data'));
@@ -270,7 +381,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   print('Error in userSnapshot: ${userSnapshot.error}');
                   return const ListTile(title: Text('Error loading user'));
                 }
-                final userData = userSnapshot.data ?? {'name': 'Unknown', 'profilePic': ''};
+                final userData =
+                    userSnapshot.data ?? {'name': 'Unknown', 'profilePic': ''};
                 final name = userData['name']!;
                 final profilePic = userData['profilePic']!;
 
@@ -319,7 +431,9 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         if (snapshot.hasError) {
           print('Error in contacts StreamBuilder: ${snapshot.error}');
-          return const Center(child: Text('Failed to load contacts. Please try again.'));
+          return const Center(
+            child: Text('Failed to load contacts. Please try again.'),
+          );
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return const Center(child: Text('No contacts available'));
@@ -330,7 +444,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return ListView.builder(
           itemCount: contactDocs.length,
           itemBuilder: (context, index) {
-            final contactData = contactDocs[index].data() as Map<String, dynamic>;
+            final contactData =
+                contactDocs[index].data() as Map<String, dynamic>;
             final contactId = contactDocs[index].id;
             final name = contactData['name'] ?? 'Unknown';
             final email = contactData['email'] ?? '';
@@ -340,10 +455,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 backgroundColor: AppTheme.primaryBlue,
                 child: const Icon(Icons.person, color: Colors.white),
               ),
-              title: Text(
-                name,
-                style: const TextStyle(color: Colors.white),
-              ),
+              title: Text(name, style: const TextStyle(color: Colors.white)),
               subtitle: Text(
                 email,
                 style: const TextStyle(color: Colors.white70),
@@ -352,7 +464,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 try {
                   final chatId = _generateChatId(currentUser!.uid, contactId);
                   print('Opening chat: $chatId for contact: $contactId');
-                  
+
                   final chatDoc = await FirebaseFirestore.instance
                       .collection('chats')
                       .doc(chatId)
@@ -364,12 +476,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         .collection('chats')
                         .doc(chatId)
                         .set({
-                      'members': [currentUser!.uid, contactId],
-                      'lastMessage': '',
-                      'lastTime': FieldValue.serverTimestamp(),
-                      'unreadCount_${currentUser!.uid}': 0,
-                      'unreadCount_$contactId': 0,
-                    });
+                          'members': [currentUser!.uid, contactId],
+                          'lastMessage': '',
+                          'lastTime': FieldValue.serverTimestamp(),
+                          'unreadCount_${currentUser!.uid}': 0,
+                          'unreadCount_$contactId': 0,
+                        });
                   }
 
                   print('Navigating to chat screen with args');

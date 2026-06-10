@@ -18,12 +18,14 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
-  late Timer _callTimer;
+  late Timer? _callTimer;
 
   int _callDuration = 0;
 
-  late RtcEngine _engine;
+  late RtcEngine? _engine;
+  // ignore: unused_field
   bool _localUserJoined = false;
+  // ignore: unused_field
   bool _remoteUserJoined = false;
   bool _isMuted = false;
   bool _isSpeakerOn = false;
@@ -33,8 +35,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   final String appId = dotenv.env['AGORA_APP_ID'] ?? "";
 
   late String channelName;
-  late String recieverId;
+  late String receiverId;
   late bool isCaller;
+
+  late String receiverName;
 
   @override
   void initState() {
@@ -58,7 +62,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
       setState(() {
         channelName = args['chatId'];
-        recieverId = args['recieverId'];
+        receiverId = args['receiverId'];
         isCaller = args['isCaller'];
       });
       // Starting Engine
@@ -68,11 +72,19 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _initAgora() async {
-    await [Permission.microphone].request();
+    final status = await Permission.microphone.request();
+
+    if (!status.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Microphone permission required')),
+      );
+      Navigator.pop(context);
+      return;
+    }
 
     // Creating Agora Engine
     _engine = createAgoraRtcEngine();
-    await _engine.initialize(
+    await _engine?.initialize(
       RtcEngineContext(
         appId: appId,
         channelProfile: ChannelProfileType.channelProfileCommunication,
@@ -80,7 +92,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     );
 
     // Setting Up Listeners(What happenss when someone joins/leave)
-    _engine.registerEventHandler(
+    _engine?.registerEventHandler(
       RtcEngineEventHandler(
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
           debugPrint("Local user joined");
@@ -104,11 +116,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     );
 
     // Turning on Microphone
-    await _engine.enableAudio();
-    await _engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+    await _engine?.enableAudio();
+    await _engine?.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
 
     // Join The Channel
-    await _engine.joinChannel(
+    await _engine?.joinChannel(
       token: '', // for testing it should be blank
       channelId: channelName,
       uid: 0, // It means Agora will set automatic
@@ -139,7 +151,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           .set({
             'callerId': currentUser!.uid,
             'callerName': currentUser.displayName ?? 'Unknown',
-            'recieverId': recieverId,
+            'receiverId': receiverId,
             'status': 'ringing',
             'channelId': channelName,
             'timestamp': FieldValue.serverTimestamp(),
@@ -189,7 +201,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     IconButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () => _endCall(),
                       icon: const Icon(
                         Icons.arrow_back_ios,
                         color: Colors.white,
@@ -255,7 +267,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
                   // Contact Name
                   const Text(
-                    'Nitish Kumar',
+                    receiverName,
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 28,
@@ -297,7 +309,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                             setState(() {
                               _isMuted = !_isMuted;
                             });
-                            _engine.muteLocalAudioStream(_isMuted);
+                            _engine?.muteLocalAudioStream(_isMuted);
                           },
                         ),
                         _buildControlButton(icon: Icons.add_call, onTap: () {}),
@@ -310,7 +322,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                             setState(() {
                               _isSpeakerOn = !_isSpeakerOn;
                             });
-                            _engine.setEnableSpeakerphone(_isSpeakerOn);
+                            _engine?.setEnableSpeakerphone(_isSpeakerOn);
                           },
                         ),
                       ],
@@ -386,11 +398,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _endCall() {
-    _callTimer.cancel();
+    _callTimer?.cancel();
     _pulseController.stop();
 
     // Officially Leave Server
-    _engine.leaveChannel();
+    _engine?.leaveChannel();
 
     // Show end call animation or navigate back
     Navigator.pop(context);
@@ -513,12 +525,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _callTimer.cancel();
+    _callTimer?.cancel();
     _pulseController.dispose();
 
     // Destroying engine to release memory
-    _engine.leaveChannel();
-    _engine.release();
+    _engine?.leaveChannel();
+    _engine?.release();
 
     super.dispose();
   }
