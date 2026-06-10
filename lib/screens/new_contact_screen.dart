@@ -274,7 +274,7 @@ class _NewContactScreenState extends State<NewContactScreen> {
             .doc(currentUser.uid)
             .get();
 
-        final userData = userDoc.data() as Map<String, dynamic>?;
+        final userData = userDoc.data();
         final userName = userData?['name'];
         final userAbout = userData?['about'];
 
