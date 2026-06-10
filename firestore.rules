@@ -95,6 +95,32 @@ service cloud.firestore {
       }
     }
 
+    // ─────────────────────────────────────────────
+    // /calls/{callId}
+    // ─────────────────────────────────────────────
+    match /calls/{callId} {
+      // Allow reading if the user is either the caller or the receiver
+      allow read: if isSignedIn() && (
+        resource.data.callerId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid
+      );
+
+      // Allow creating a call if the sender sets themselves as the caller
+      allow create: if isSignedIn() && request.resource.data.callerId == request.auth.uid;
+
+      // Allow updating call status (e.g., from 'ringing' to 'accepted' or 'rejected')
+      allow update: if isSignedIn() && (
+        resource.data.callerId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid
+      );
+
+      // Allow deleting the call document when the call ends
+      allow delete: if isSignedIn() && (
+        resource.data.callerId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid
+      );
+    }
+
     // Block access to any other collection not explicitly listed above.
     match /{document=**} {
       allow read, write: if false;

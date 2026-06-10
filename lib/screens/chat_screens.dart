@@ -711,8 +711,17 @@ class _ChatScreenState extends State<ChatScreen> {
             icon: const Icon(Icons.videocam),
           ),
           IconButton(
-            onPressed: () => Navigator.pushNamed(context, '/call'),
             icon: const Icon(Icons.call),
+            onPressed: () => Navigator.pushNamed(
+              context,
+              '/call',
+              arguments: {
+                'chatId': chatId,
+                'recieverId': otherUserId,
+                'recieverName': otherUserName,
+                'isCaller':true, //True because we are initiating the call
+              }
+            ),
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
