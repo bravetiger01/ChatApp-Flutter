@@ -2,6 +2,11 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 class CallScreen extends StatefulWidget {
   const CallScreen({super.key});
 
@@ -13,35 +18,100 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
   late Timer _callTimer;
-  
+
   int _callDuration = 0;
+
+  late RtcEngine _engine;
+  bool _localUserJoined = false;
+  bool _remoteUserJoined = false;
   bool _isMuted = false;
   bool _isSpeakerOn = false;
-  bool _isVideoOn = false;
+
   bool _isCallActive = false;
+
+  final String appId = "";
+
+  late String channelName;
+  late String recieverId;
+  late bool isCaller;
 
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize pulse animation
     _pulseController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
     );
-    
-    _pulseAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.3,
-    ).animate(CurvedAnimation(
-      parent: _pulseController,
-      curve: Curves.easeInOut,
-    ));
-    
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
     _pulseController.repeat(reverse: true);
-    
-    // Start call timer
-    _startCallTimer();
+
+    // We need to wait for the screen to build to get arguements
+    Future.delayed(Duration.zero, () {
+      final args =
+          ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+      setState(() {
+        channelName = args['chatId'];
+        recieverId = args['recieverId'];
+        isCaller = args['isCaller'];
+      });
+      // Starting Engine
+      _initAgora();
+    });
+  }
+
+  Future<void> _initAgora() async {
+    await [Permission.microphone].request();
+
+    // Creating Agora Engine
+    _engine = createAgoraRtcEngine();
+    await _engine.initialize(
+      RtcEngineContext(
+        appId: appId,
+        channelProfile: ChannelProfileType.channelProfileCommunication,
+      ),
+    );
+
+    // Setting Up Listeners(What happenss when someone joins/leave)
+    _engine.registerEventHandler(
+      RtcEngineEventHandler(
+        onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
+          debugPrint("Local user joined");
+          setState(() {
+            _localUserJoined = true;
+          });
+        },
+        onUserJoined: (connection, remoteUid, elapsed) {
+          debugPrint("Remote User UID: $remoteUid joined");
+          setState(() {
+            _remoteUserJoined = true;
+            _isCallActive = true;
+          });
+          _startCallTimer(); //starting the call timer
+        },
+        onUserOffline: (connection, remoteUid, reason) {
+          debugPrint("Remote User Left");
+          _endCall(); //Someone left so ending call
+        },
+      ),
+    );
+
+    // Turning on Microphone
+    await _engine.enableAudio();
+    await _engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+
+    // Join The Channel
+    await _engine.joinChannel(
+      token: '', // for testing it should be blank
+      channelId: channelName,
+      uid: 0, // It means Agora will set automatic
+      options: const ChannelMediaOptions(),
+    );
   }
 
   void _startCallTimer() {
@@ -70,11 +140,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF1A1A2E),
-              Color(0xFF16213E),
-              Color(0xFF0F3460),
-            ],
+            colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
           ),
         ),
         child: SafeArea(
@@ -122,13 +188,15 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                           height: 160,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(80),
-                            boxShadow: _isCallActive ? [] : [
-                              BoxShadow(
-                                color: Colors.blue.withOpacity(0.3),
-                                blurRadius: 20,
-                                spreadRadius: 5,
-                              ),
-                            ],
+                            boxShadow: _isCallActive
+                                ? []
+                                : [
+                                    BoxShadow(
+                                      color: Colors.blue.withOpacity(0.3),
+                                      blurRadius: 20,
+                                      spreadRadius: 5,
+                                    ),
+                                  ],
                           ),
                           child: Container(
                             decoration: BoxDecoration(
@@ -163,7 +231,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
                   // Call Status
                   Text(
-                    _isCallActive ? _formatDuration(_callDuration) : 'Calling...',
+                    _isCallActive
+                        ? _formatDuration(_callDuration)
+                        : 'Calling...',
                     style: TextStyle(
                       color: _isCallActive ? Colors.green : Colors.white70,
                       fontSize: 18,
@@ -193,12 +263,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                             });
                           },
                         ),
+                        _buildControlButton(icon: Icons.add_call, onTap: () {}),
                         _buildControlButton(
-                          icon: Icons.add_call,
-                          onTap: () {},
-                        ),
-                        _buildControlButton(
-                          icon: _isSpeakerOn ? Icons.volume_up : Icons.volume_down,
+                          icon: _isSpeakerOn
+                              ? Icons.volume_up
+                              : Icons.volume_down,
                           isActive: _isSpeakerOn,
                           onTap: () {
                             setState(() {
@@ -216,7 +285,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         _buildControlButton(
-                          icon: _isVideoOn ? Icons.videocam : Icons.videocam_off,
+                          icon: _isVideoOn
+                              ? Icons.videocam
+                              : Icons.videocam_off,
                           isActive: _isVideoOn,
                           onTap: () {
                             setState(() {
@@ -224,7 +295,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                             });
                           },
                         ),
-                        
+
                         // End Call Button
                         GestureDetector(
                           onTap: _endCall,
@@ -249,7 +320,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                             ),
                           ),
                         ),
-                        
+
                         _buildControlButton(
                           icon: Icons.dialpad,
                           onTap: () => _showDialpad(),
@@ -281,16 +352,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         decoration: BoxDecoration(
           color: isActive ? Colors.blue : Colors.white.withOpacity(0.2),
           borderRadius: BorderRadius.circular(30),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.3),
-            width: 1,
-          ),
+          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
         ),
-        child: Icon(
-          icon,
-          color: Colors.white,
-          size: 24,
-        ),
+        child: Icon(icon, color: Colors.white, size: 24),
       ),
     );
   }
@@ -298,7 +362,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   void _endCall() {
     _callTimer.cancel();
     _pulseController.stop();
-    
+
     // Show end call animation or navigate back
     Navigator.pop(context);
   }
@@ -326,7 +390,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                 ),
               ),
               const SizedBox(height: 30),
-              
+
               // Dialpad grid
               Expanded(
                 child: GridView.builder(
@@ -338,9 +402,35 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                   ),
                   itemCount: 12,
                   itemBuilder: (context, index) {
-                    final keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
-                    final letters = ['', 'ABC', 'DEF', 'GHI', 'JKL', 'MNO', 'PQRS', 'TUV', 'WXYZ', '', '+', ''];
-                    
+                    final keys = [
+                      '1',
+                      '2',
+                      '3',
+                      '4',
+                      '5',
+                      '6',
+                      '7',
+                      '8',
+                      '9',
+                      '*',
+                      '0',
+                      '#',
+                    ];
+                    final letters = [
+                      '',
+                      'ABC',
+                      'DEF',
+                      'GHI',
+                      'JKL',
+                      'MNO',
+                      'PQRS',
+                      'TUV',
+                      'WXYZ',
+                      '',
+                      '+',
+                      '',
+                    ];
+
                     return GestureDetector(
                       onTap: () {
                         // Handle dialpad key press
