@@ -6,6 +6,8 @@ import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 
 class CallScreen extends StatefulWidget {
   const CallScreen({super.key});
@@ -29,7 +31,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   bool _isCallActive = false;
 
-  final String appId = "";
+  final String appId = dotenv.env['AGORA_APP_ID'] ?? "";
 
   late String channelName;
   late String recieverId;
@@ -261,6 +263,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                             setState(() {
                               _isMuted = !_isMuted;
                             });
+                            _engine.muteLocalAudioStream(_isMuted);
                           },
                         ),
                         _buildControlButton(icon: Icons.add_call, onTap: () {}),
@@ -273,6 +276,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                             setState(() {
                               _isSpeakerOn = !_isSpeakerOn;
                             });
+                            _engine.setEnableSpeakerphone(_isSpeakerOn);
                           },
                         ),
                       ],
@@ -284,18 +288,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _buildControlButton(
-                          icon: _isVideoOn
-                              ? Icons.videocam
-                              : Icons.videocam_off,
-                          isActive: _isVideoOn,
-                          onTap: () {
-                            setState(() {
-                              _isVideoOn = !_isVideoOn;
-                            });
-                          },
-                        ),
-
                         // End Call Button
                         GestureDetector(
                           onTap: _endCall,
@@ -362,6 +354,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   void _endCall() {
     _callTimer.cancel();
     _pulseController.stop();
+
+    // Officially Leave Server
+    _engine.leaveChannel();
 
     // Show end call animation or navigate back
     Navigator.pop(context);
@@ -477,6 +472,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   void dispose() {
     _callTimer.cancel();
     _pulseController.dispose();
+    
+    // Destroying engine to release memory
+    _engine.leaveChannel();
+    _engine.release();
+
     super.dispose();
   }
 }

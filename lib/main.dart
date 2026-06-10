@@ -16,6 +16,7 @@ import 'utils/app_theme.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'services/notification_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -25,6 +26,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await dotenv.load(fileName: ".env");
+
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Set up background message handler
@@ -72,7 +76,8 @@ void main() async {
 
   // Foreground message handler
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    if (message.data['senderId'] == FirebaseAuth.instance.currentUser?.uid) return;
+    if (message.data['senderId'] == FirebaseAuth.instance.currentUser?.uid)
+      return;
     print('Foreground message received: ${message.data}');
     NotificationService.showNotification(message);
   });
