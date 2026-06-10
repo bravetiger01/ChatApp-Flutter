@@ -14,7 +14,7 @@ import '../widgets/message_bubble.dart';
 import '../models/chat_model.dart';
 import '../services/message_cache.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:Sampark/services/file_download.dart';
+import 'package:chat_app/services/file_download.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});

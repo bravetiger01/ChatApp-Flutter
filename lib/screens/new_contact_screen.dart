@@ -342,8 +342,10 @@ class _NewContactScreenState extends State<NewContactScreen> {
         if (!chatDoc.exists) {
           await FirebaseFirestore.instance.collection('chats').doc(chatId).set({
             'members': [currentUser.uid, otherUserId],
-            'lastMessage': 'New chat started',
+            'lastMessage': '',
             'lastTime': FieldValue.serverTimestamp(),
+            'unreadCount_${currentUser.uid}': 0,
+            'unreadCount_$otherUserId': 0,
           });
         }
 

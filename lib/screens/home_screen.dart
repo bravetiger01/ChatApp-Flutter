@@ -349,33 +349,49 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: const TextStyle(color: Colors.white70),
               ),
               onTap: () async {
-                final chatId = _generateChatId(currentUser!.uid, contactId);
-                final chatDoc = await FirebaseFirestore.instance
-                    .collection('chats')
-                    .doc(chatId)
-                    .get();
-
-                if (!chatDoc.exists) {
-                  await FirebaseFirestore.instance
+                try {
+                  final chatId = _generateChatId(currentUser!.uid, contactId);
+                  print('Opening chat: $chatId for contact: $contactId');
+                  
+                  final chatDoc = await FirebaseFirestore.instance
                       .collection('chats')
                       .doc(chatId)
-                      .set({
-                    'members': [currentUser!.uid, contactId],
-                    'lastMessage': 'New chat started',
-                    'lastTime': FieldValue.serverTimestamp(),
-                  });
-                }
+                      .get();
 
-                Navigator.pushNamed(
-                  context,
-                  '/chat',
-                  arguments: {
-                    'chatId': chatId,
-                    'otherUserId': contactId,
-                    'otherUserName': name,
-                    'profilePic': '',
-                  },
-                );
+                  if (!chatDoc.exists) {
+                    print('Creating new chat document: $chatId');
+                    await FirebaseFirestore.instance
+                        .collection('chats')
+                        .doc(chatId)
+                        .set({
+                      'members': [currentUser!.uid, contactId],
+                      'lastMessage': '',
+                      'lastTime': FieldValue.serverTimestamp(),
+                      'unreadCount_${currentUser!.uid}': 0,
+                      'unreadCount_$contactId': 0,
+                    });
+                  }
+
+                  print('Navigating to chat screen with args');
+                  Navigator.pushNamed(
+                    context,
+                    '/chat',
+                    arguments: {
+                      'chatId': chatId,
+                      'otherUserId': contactId,
+                      'otherUserName': name,
+                      'profilePic': contactData['profilePic'] ?? '',
+                    },
+                  );
+                } catch (e) {
+                  print('Error opening chat from contact: $e');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error opening chat: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               },
             );
           },

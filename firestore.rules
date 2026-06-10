@@ -40,8 +40,14 @@ service cloud.firestore {
 
       // ─── /users/{uid}/contacts/{contactId} ───
       match /contacts/{contactId} {
-        // Only the owning user may read, create, or delete their contacts.
-        allow read, create, delete: if isOwner(uid);
+        // The owning user may read and delete their contacts.
+        allow read, delete: if isOwner(uid);
+        
+        // Allow creating a contact if:
+        // 1. The owner is creating their own contact, OR
+        // 2. Someone is adding this user as their contact (bidirectional)
+        allow create: if isOwner(uid) || contactId == request.auth.uid;
+        
         // Updates are not needed for contacts in the current schema.
         allow update: if false;
       }
@@ -52,13 +58,15 @@ service cloud.firestore {
     // ─────────────────────────────────────────────
     match /chats/{chatId} {
       // Only chat members may read the chat document.
-      allow read: if isChatMember(resource.data);
+      allow read: if (resource == null && chatId.matches('.*' + request.auth.uid + '.*')) 
+                  || (resource != null && isChatMember(resource.data));
 
       // A signed-in user may create a chat only if they list themselves
-      // as one of the two members.
+      // as one of the two members. Allow any additional metadata fields.
       allow create: if isSignedIn()
                     && request.auth.uid in request.resource.data.members
-                    && request.resource.data.members.size() == 2;
+                    && request.resource.data.members.size() == 2
+                    && request.resource.data.keys().hasAll(['members', 'lastMessage', 'lastTime']);
 
       // Only existing members may update chat metadata (lastMessage, unreadCount, etc.).
       allow update: if isChatMember(resource.data);
