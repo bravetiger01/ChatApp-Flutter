@@ -8,6 +8,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import 'package:cloud_functions/cloud_functions.dart';
+
+
 class CallScreen extends StatefulWidget {
   const CallScreen({super.key});
 
@@ -18,11 +21,11 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
-  late Timer? _callTimer;
+  Timer? _callTimer;
 
   int _callDuration = 0;
 
-  late RtcEngine? _engine;
+  RtcEngine? _engine;
   StreamSubscription<DocumentSnapshot>? _signalingSubscription;
 
   // ignore: unused_field
@@ -37,11 +40,14 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   final String appId = dotenv.env['AGORA_APP_ID'] ?? "";
 
-  late String channelName;
-  late String receiverId;
-  late bool isCaller;
+  String channelName = '';
+  String receiverId = '';
+  bool isCaller = false;
 
-  late String receiverName;
+  String receiverName = '';
+
+  String _callStatusText = 'Calling...';
+  Color _callStatusColor = Colors.white70;
 
   @override
   void initState() {
@@ -79,10 +85,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     final status = await Permission.microphone.request();
 
     if (!status.isGranted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Microphone permission required')),
-      );
-      Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission required')),
+        );
+        Navigator.pop(context);
+      }
       return;
     }
 
@@ -95,12 +103,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       ),
     );
 
-    // Setting Up Listeners(What happenss when someone joins/leave)
+    // Setting Up Listeners (what happens when someone joins/leaves)
     _engine?.registerEventHandler(
       RtcEngineEventHandler(
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
           if (!mounted) return;
-          debugPrint("Local user joined");
+          debugPrint("Local user joined the channel");
           setState(() {
             _localUserJoined = true;
           });
@@ -112,12 +120,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             _remoteUserJoined = true;
             _isCallActive = true;
           });
-          _startCallTimer(); //starting the call timer
+          _startCallTimer();
         },
         onUserOffline: (connection, remoteUid, reason) {
           if (!mounted) return;
-          debugPrint("Remote User Left");
-          _endCall(); //Someone left so ending call
+          debugPrint("Remote User left the channel");
+          _endCall();
         },
       ),
     );
@@ -126,14 +134,34 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     await _engine?.enableAudio();
     await _engine?.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
 
-    // Join The Channel
+    // Fetch a secure token from our Cloud Function
+    String agoraToken = '';
+    try {
+      final result = await FirebaseFunctions.instanceFor(region: 'asia-south1')
+          .httpsCallable('generateAgoraToken')
+          .call({'channelName': channelName});
+      agoraToken = result.data['token'] as String;
+      debugPrint("Agora token fetched successfully");
+    } catch (e) {
+      debugPrint("Failed to fetch Agora token: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not connect to call server')),
+        );
+        Navigator.pop(context);
+      }
+      return;
+    }
+
+    // Join The Channel with the real token
     await _engine?.joinChannel(
-      token: '', // for testing it should be blank
+      token: agoraToken,
       channelId: channelName,
-      uid: 0, // It means Agora will set automatic
+      uid: 0, // Agora assigns automatically
       options: const ChannelMediaOptions(),
     );
   }
+
 
   void _startCallTimer() {
     if (_callTimer != null) return;
@@ -171,15 +199,18 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           .collection('calls')
           .doc(channelName)
           .snapshots()
-          .listen((snapshot) {
+          .listen((snapshot) async {
             if (!snapshot.exists || !mounted) return;
             final data = snapshot.data() as Map<String, dynamic>;
             if (data['status'] == 'rejected') {
               if (mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Call Declined')));
+                setState(() {
+                  _callStatusText = 'Call Declined';
+                  _callStatusColor = Colors.redAccent;
+                });
+                
               }
+              await Future.delayed(const Duration(seconds:2));
               _endCall();
             } else if (data['status'] == 'accepted') {
               if (mounted) {
@@ -300,7 +331,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                   Text(
                     _isCallActive
                         ? _formatDuration(_callDuration)
-                        : 'Calling...',
+                        : _callStatusText,
                     style: TextStyle(
                       color: _isCallActive ? Colors.green : Colors.white70,
                       fontSize: 18,
@@ -341,7 +372,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                             setState(() {
                               _isSpeakerOn = !_isSpeakerOn;
                             });
-                            _engine?.setEnableSpeakerphone(_isSpeakerOn);
+                            try {
+                              _engine?.setEnableSpeakerphone(_isSpeakerOn);
+                            } catch (e) {
+                              debugPrint('Speaker routing error: $e');
+                            }
                           },
                         ),
                       ],
@@ -427,7 +462,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _engine?.leaveChannel();
 
     FirebaseFirestore.instance.collection('calls').doc(channelName).delete();
-
 
     // Show end call animation or navigate back
     if (mounted) Navigator.pop(context);

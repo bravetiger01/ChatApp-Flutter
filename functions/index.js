@@ -3,8 +3,31 @@ const admin = require("firebase-admin");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
+const {RtcTokenBuilder, RtcRole} = require("agora-token");
+
+const {onCall} = require("firebase-functions/v2/https");
+
 
 initializeApp();
+
+
+exports.generateAgoraToken = onCall({region: "asia-south1"}, (request) => {
+  const channelName = request.data.channelName;
+  // Read from functions/.env file — never hardcoded
+  const APP_ID = process.env.AGORA_APP_ID;
+  const APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;
+  if (!APP_ID || !APP_CERTIFICATE) {
+    throw new Error("Agora credentials not configured in environment.");
+  }
+  const uid = 0;
+  const role = RtcRole.PUBLISHER;
+  const tokenExpiry = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+  const token = RtcTokenBuilder.buildTokenWithUid(
+    APP_ID, APP_CERTIFICATE, channelName, uid, role, tokenExpiry, tokenExpiry,
+  );
+  return {token: token};
+});
+
 
 exports.sendChatNotification = onDocumentCreated(
   {
