@@ -23,6 +23,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   int _callDuration = 0;
 
   late RtcEngine? _engine;
+  StreamSubscription<DocumentSnapshot>? _signalingSubscription;
+
   // ignore: unused_field
   bool _localUserJoined = false;
   // ignore: unused_field
@@ -134,6 +136,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _startCallTimer() {
+    if (_callTimer != null) return;
     _callTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
@@ -141,9 +144,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       }
       setState(() {
         _callDuration++;
-        if (_callDuration == 3) {
-          _isCallActive = true;
-        }
       });
     });
   }
@@ -167,15 +167,25 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           });
 
       // 2. Listen to if they reject the call
-      FirebaseFirestore.instance
+      _signalingSubscription = FirebaseFirestore.instance
           .collection('calls')
           .doc(channelName)
           .snapshots()
-          .listen((snapshots) {
-            if (snapshots.exists) {
-              final data = snapshots.data() as Map<String, dynamic>;
-              if (data['status'] == 'rejected') {
-                _endCall();
+          .listen((snapshot) {
+            if (!snapshot.exists || !mounted) return;
+            final data = snapshot.data() as Map<String, dynamic>;
+            if (data['status'] == 'rejected') {
+              if (mounted) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('Call Declined')));
+              }
+              _endCall();
+            } else if (data['status'] == 'accepted') {
+              if (mounted) {
+                setState(() {
+                  _isCallActive = true;
+                });
               }
             }
           });
@@ -428,7 +438,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
     // Show end call animation or navigate back
     if (mounted) Navigator.pop(context);
-    
   }
 
   void _showDialpad() {
@@ -540,6 +549,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _callTimer?.cancel();
+    _signalingSubscription?.cancel();
     _pulseController.dispose();
 
     // Destroying engine to release memory
