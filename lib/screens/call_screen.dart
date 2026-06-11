@@ -60,7 +60,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _pulseController.repeat(reverse: true);
 
     // We need to wait for the screen to build to get arguements
-    Future.delayed(Duration.zero, () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       final args =
           ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
       setState(() {
@@ -426,15 +426,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     // Officially Leave Server
     _engine?.leaveChannel();
 
-    if (isCaller) {
-      // If we called them, delete the ringing document to stop their phone
-      FirebaseFirestore.instance.collection('calls').doc(channelName).delete();
-    } else {
-      // If we recieved the call and hang up, we just update the status so caller knows
-      FirebaseFirestore.instance.collection('calls').doc(channelName).update({
-        'status': 'ended',
-      });
-    }
+    FirebaseFirestore.instance.collection('calls').doc(channelName).delete();
+
 
     // Show end call animation or navigate back
     if (mounted) Navigator.pop(context);
