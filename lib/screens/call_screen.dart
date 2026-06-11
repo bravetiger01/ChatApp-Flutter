@@ -96,12 +96,14 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _engine?.registerEventHandler(
       RtcEngineEventHandler(
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
+          if (!mounted) return;
           debugPrint("Local user joined");
           setState(() {
             _localUserJoined = true;
           });
         },
         onUserJoined: (connection, remoteUid, elapsed) {
+          if (!mounted) return;
           debugPrint("Remote User UID: $remoteUid joined");
           setState(() {
             _remoteUserJoined = true;
@@ -110,6 +112,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           _startCallTimer(); //starting the call timer
         },
         onUserOffline: (connection, remoteUid, reason) {
+          if (!mounted) return;
           debugPrint("Remote User Left");
           _endCall(); //Someone left so ending call
         },
@@ -131,6 +134,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   void _startCallTimer() {
     _callTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       setState(() {
         _callDuration++;
         if (_callDuration == 3) {
