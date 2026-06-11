@@ -25,6 +25,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // Key: uid, Value: {name, profilePic}
   final Map<String, Map<String, String>> _userCache = {};
 
+  bool _isIncomingDialogVisible = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
         .listen((snapshot) {
           for (var change in snapshot.docChanges) {
             if (change.type == DocumentChangeType.added) {
+              if (_isIncomingDialogVisible) return;
               final callData = change.doc.data() as Map<String, dynamic>;
               _showIncomingCallDialog(callData, change.doc.id);
             }
@@ -60,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
     Map<String, dynamic> callData,
     String callDocId,
   ) {
+    _isIncomingDialogVisible = true;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -88,9 +92,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              onPressed: () {
+              onPressed: () async {
                 // Accept
-                FirebaseFirestore.instance
+                await FirebaseFirestore.instance
                     .collection('calls')
                     .doc(callDocId)
                     .update({'status': 'accepted'});
@@ -114,7 +118,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         );
       },
-    );
+    ).then((_) {
+      _isIncomingDialogVisible = false; //resets when dialog closes
+    });
   }
 
   Future<Map<String, String>> getUserData(String uid) async {
@@ -281,7 +287,9 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.pushNamed(context, '/new-contact');
               break;
             case 2:
-              Navigator.pushNamed(context, '/call');
+              setState(() {
+                _selectedTab = 'Calls';
+              });
               break;
           }
         },
