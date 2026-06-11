@@ -31,6 +31,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   bool _isSpeakerOn = false;
 
   bool _isCallActive = false;
+  bool _hasEnded = false;
 
   final String appId = dotenv.env['AGORA_APP_ID'] ?? "";
 
@@ -406,14 +407,15 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _endCall() {
+    if (_hasEnded) return;
+    _hasEnded = true;
+
     _callTimer?.cancel();
     _pulseController.stop();
 
     // Officially Leave Server
     _engine?.leaveChannel();
 
-    // Show end call animation or navigate back
-    Navigator.pop(context);
     if (isCaller) {
       // If we called them, delete the ringing document to stop their phone
       FirebaseFirestore.instance.collection('calls').doc(channelName).delete();
@@ -423,6 +425,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         'status': 'ended',
       });
     }
+
+    // Show end call animation or navigate back
+    if (mounted) Navigator.pop(context);
+    
   }
 
   void _showDialpad() {
