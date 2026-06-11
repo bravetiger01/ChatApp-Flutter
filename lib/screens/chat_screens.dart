@@ -717,8 +717,8 @@ class _ChatScreenState extends State<ChatScreen> {
               '/call',
               arguments: {
                 'chatId': chatId,
-                'recieverId': otherUserId,
-                'recieverName': otherUserName,
+                'receiverId': otherUserId,
+                'receiverName': otherUserName,
                 'isCaller':true, //True because we are initiating the call
               }
             ),

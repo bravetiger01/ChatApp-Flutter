@@ -1,5 +1,3 @@
-import 'dart:nativewrappers/_internal/vm/lib/ffi_allocation_patch.dart';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -45,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // Listen to calls collection where we are reciever and it's ringing
     _callSubscription = FirebaseFirestore.instance
         .collection('calls')
-        .where('recieverId', isEqualTo: currentUser?.uid)
+        .where('receiverId', isEqualTo: currentUser?.uid)
         .where('status', isEqualTo: 'ringing')
         .snapshots()
         .listen((snapshot) {
@@ -102,8 +100,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   '/call',
                   arguments: {
                     'chatId': callData['channelId'],
-                    'recieverId': currentUser!.uid,
-                    'recieverName': callData['callerName'],
+                    'receiverId': currentUser!.uid,
+                    'receiverName': callData['callerName'],
                     'isCaller': false,
                   },
                 );

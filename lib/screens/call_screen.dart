@@ -63,6 +63,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       setState(() {
         channelName = args['chatId'];
         receiverId = args['receiverId'];
+        receiverName = args['receiverName'];
         isCaller = args['isCaller'];
       });
       // Starting Engine
@@ -266,7 +267,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                   const SizedBox(height: 30),
 
                   // Contact Name
-                  const Text(
+                  Text(
                     receiverName,
                     style: TextStyle(
                       color: Colors.white,
