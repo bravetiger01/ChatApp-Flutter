@@ -25,7 +25,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // Key: uid, Value: {name, profilePic}
   final Map<String, Map<String, String>> _userCache = {};
 
-  bool _isIncomingDialogVisible = false;
+  // bool _isIncomingDialogVisible = false;
+  bool _isIncomingCallScreenVisible = false;
 
   @override
   void initState() {
@@ -51,75 +52,35 @@ class _HomeScreenState extends State<HomeScreen> {
         .listen((snapshot) {
           for (var change in snapshot.docChanges) {
             if (change.type == DocumentChangeType.added) {
-              if (_isIncomingDialogVisible) return;
+              if (_isIncomingCallScreenVisible) return;
               final callData = change.doc.data() as Map<String, dynamic>;
-              _showIncomingCallDialog(callData, change.doc.id);
+              _showIncomingCallScreen(callData, change.doc.id);
             }
           }
         });
   }
 
-  void _showIncomingCallDialog(
+  void _showIncomingCallScreen(
     Map<String, dynamic> callData,
     String callDocId,
   ) {
-    _isIncomingDialogVisible = true;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF2A2D3A),
-          title: const Text(
-            'Incoming Call',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: Text(
-            '${callData['callerName']} is calling you!',
-            style: TextStyle(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                // Decline
-                FirebaseFirestore.instance
-                    .collection('calls')
-                    .doc(callDocId)
-                    .update({'status': 'rejected'});
-                Navigator.pop(context);
-              },
-              child: const Text('Decline', style: TextStyle(color: Colors.red)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              onPressed: () async {
-                // Accept
-                await FirebaseFirestore.instance
-                    .collection('calls')
-                    .doc(callDocId)
-                    .update({'status': 'accepted'});
-                Navigator.pop(context); //Close dialog
-                Navigator.pushNamed(
-                  context,
-                  '/call',
-                  arguments: {
-                    'chatId': callData['channelId'],
-                    'receiverId': currentUser!.uid,
-                    'receiverName': callData['callerName'],
-                    'isCaller': false,
-                  },
-                );
-              },
-              child: const Text(
-                'Accept',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        );
+    _isIncomingCallScreenVisible = true;
+    // Navigate to the new full-screen incoming call UI.
+    // pushNamed goes TO the screen; .then() runs when the user
+    // comes BACK (accepted, declined, or caller cancelled).
+
+    Navigator.pushNamed(
+      context,
+      '/incoming-call',
+      arguments: {
+        'callerName' : callData['callerName'] ?? 'Unknown',
+        'callerId' : callData['callerId'] ?? '',
+        'channelId':   callDocId,              // This IS the Agora channel name
+        'callerPhoto': callData['callerPhoto'] ?? '', // Falls back to icon if empty
       },
     ).then((_) {
-      _isIncomingDialogVisible = false; //resets when dialog closes
+      // Reset the guard when the screen closes for any reason
+      _isIncomingCallScreenVisible = false; //resets when dialog closes
     });
   }
 
