@@ -1,6 +1,6 @@
 # Sampark — Known Issues, Bugs & Vulnerabilities
 
-> Audit date: 2026-06-04 · Last updated: 2026-06-07  
+> Audit date: 2026-06-04 · Last updated: 2026-06-20  
 > Severity legend: 🔴 Critical · 🟠 High · 🟡 Medium · 🔵 Low / Polish  
 > Status legend: ✅ Fixed · 🔧 Open
 
@@ -283,6 +283,59 @@ Firebase Auth normalizes emails to lowercase on sign-up. However, the email stor
 
 ---
 
+---
+
+## 🟠 High — Voice Call UX & Delivery (2026-06-20)
+
+### 30. APK size is 257 MB — too large for distribution 🔧 Open
+**Files:** `android/app/build.gradle`, Agora native libraries
+
+The release APK is 257 MB. This exceeds Google Play's 100 MB base APK guideline (and even the 200 MB hard limit without PAD). The primary culprit is the `agora_rtc_engine` package bundling native `.so` libraries for **all four ABI architectures** (arm, arm64-v8a, x86, x86_64) plus every Agora extension (face capture, lip-sync, AI echo cancellation, spatial audio, screen capture, etc.).
+
+**Fix:** Two-step reduction:
+1. **Split APK by ABI** — in `android/app/build.gradle`, add:
+   ```groovy
+   android {
+     splits {
+       abi {
+         enable true
+         reset()
+         include "arm64-v8a", "armeabi-v7a"
+         universalApk false
+       }
+     }
+   }
+   ```
+   This alone reduces from 257 MB → ~60–80 MB per architecture APK.
+2. **Enable R8/ProGuard shrinking** — ensure `minifyEnabled true` and `shrinkResources true` in the `release` build type.
+
+---
+
+### 31. Incoming call shows a dialog box instead of a full-screen ringing UI 🔧 Open
+**File:** `home_screen.dart` (`_showIncomingCallDialog`)
+
+Currently, when a voice call arrives, a small `AlertDialog` pops up in the centre of the screen. This is not how production calling apps behave. It is easily dismissed, obscured by other UI, and provides a poor user experience — especially when the app is in the foreground but the user is on a different screen.
+
+**Fix:** Replace `_showIncomingCallDialog` with a dedicated full-screen `IncomingCallScreen` that:
+- Pushes as a full-screen route (not a dialog) so it covers whatever the user is doing.
+- Shows the caller's avatar, name, and a ringtone.
+- Has a **slide-up-to-answer** and **slide-down-to-decline** interaction (WhatsApp / iOS phone style).
+- Dismisses correctly when the caller cancels (Firestore document deleted).
+
+---
+
+### 32. Voice calls do not ring when the app is in the background or closed 🔧 Open
+**Files:** `home_screen.dart`, `functions/index.js`, `call_screen.dart`
+
+The incoming call listener (`_listenForIncomingCalls`) is a Firestore `snapshots().listen()` that runs only while the app is active. When the app is backgrounded or killed, this listener is paused/destroyed by the OS, so the receiving user's phone never rings.
+
+**Fix:**
+1. Deploy a new Firebase Cloud Function that triggers on new `calls` documents (`onDocumentCreated`).
+2. The function reads the receiver's FCM token from `users/{receiverId}/fcmToken` and sends a **high-priority data-only FCM message** (not a notification message) to wake the device.
+3. In Flutter, add a background message handler that uses [`flutter_callkit_incoming`](https://pub.dev/packages/flutter_callkit_incoming) to display the native iOS CallKit / Android ConnectionService ringing UI even when the app is dead.
+
+---
+
 
 | # | Severity | Category | File(s) | Status |
 |---|---|---|---|---|
@@ -316,3 +369,6 @@ Firebase Auth normalizes emails to lowercase on sign-up. However, the email stor
 | 27 | 🟠 | Data Integrity | `new_contact_screen.dart` | 🔧 Open |
 | 28 | 🟠 | Data Integrity | `new_contact_screen.dart` | 🔧 Open |
 | 29 | 🟡 | Logic Bug | `new_contact_screen.dart` | 🔧 Open |
+| 30 | 🟠 | Performance | `android/app/build.gradle` | 🔧 Open |
+| 31 | 🟠 | UX | `home_screen.dart` | 🔧 Open |
+| 32 | 🟠 | Feature | `home_screen.dart`, `functions/index.js` | 🔧 Open |
