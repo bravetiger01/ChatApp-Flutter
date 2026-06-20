@@ -39,14 +39,7 @@ android {
             )
         }
     }
-    splits{
-        abi{
-            isEnable = true //Turn on ABI spliting
-            reset() //Clear default list first
-            include("arm64-v8a", "armeabi-v7a") //Only real phones, no emulator ABIs
-            isUniversalApk = false //Don't make fat universal APK
-        }
-    }
+    
 }
 
 flutter {
