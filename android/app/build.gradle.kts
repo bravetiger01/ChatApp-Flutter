@@ -31,6 +31,20 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug") // Debug signing for testing
+            isMinifyEnabled = true //Removes unused code
+            isShrinkResources = true //Removes unused image/string resources
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+    splits{
+        abi{
+            isEnable = true //Turn on ABI spliting
+            reset() //Clear default list first
+            include("arm64-v8a", "armeabi-v7a") //Only real phones, no emulator ABIs
+            isUniversalApk = false //Don't make fat universal APK
         }
     }
 }
