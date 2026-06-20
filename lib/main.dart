@@ -12,6 +12,7 @@ import 'screens/new_chat_screen.dart';
 import 'screens/new_contact_screen.dart';
 import 'screens/your_profile_screen.dart';
 import 'screens/call_screen.dart';
+import 'screens/incoming_call_screen.dart';
 import 'utils/app_theme.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
@@ -112,6 +113,7 @@ class SamParkApp extends StatelessWidget {
         '/new-contact': (context) => const NewContactScreen(),
         '/your-profile': (context) => const YourProfileScreen(),
         '/call': (context) => const CallScreen(),
+        '/incoming-call' : (context) => const IncomingCallScreen(),
       },
     );
   }
