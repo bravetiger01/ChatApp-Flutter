@@ -16,9 +16,22 @@ class NotificationService {
       description: 'Notifications for new chat messages',
       importance: Importance.max,
     );
-    await _notifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(androidChannel);
+    // Create call notification channel — max importance so it rings
+    const callChannel = AndroidNotificationChannel(
+      'call_channel',
+      'Incoming Calls',
+      description: 'Notifications for incoming voice calls',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    final androidPlugin = _notifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
+    await androidPlugin?.createNotificationChannel(androidChannel);
+    await androidPlugin?.createNotificationChannel(callChannel);
+
 
     await _notifications.initialize(
       initSettings,

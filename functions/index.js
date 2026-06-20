@@ -113,3 +113,80 @@ exports.sendChatNotification = onDocumentCreated(
     return null;
   },
 );
+
+
+exports.onCallCreated = onDocumentCreated(
+  {document: "calls/{callId}", region: "asia-south1"},
+  async (event) => {
+    const callData = event.data.data();
+    const receiverId = callData.receiverId;
+    const callerName = callData.callerName || "Unknown";
+    const callId = event.params.callId; // Agora channelID
+
+    if (!receiverId) {
+      console.log("No receiverId in call document, skipping.");
+      return null;
+    }
+
+    // Get receiver's FCM tokens
+    const receiverDoc = await getFirestore().collection("users").doc(receiverId).get();
+
+    if (!receiverDoc.exists || !receiverDoc.data().fcmTokens) {
+      console.log(`No FCM tokens found for receiver: ${receiverId}`);
+      return null;
+    }
+
+    const fcmTokens = receiverDoc.data().fcmTokens;
+
+    // Build message payload
+    const payload = {
+      notification: {
+        title: `${callerName} is Calling`,
+        body: "Tap to answer or decline",
+      },
+      data: {
+        type: "incoming_call",
+        callerId: callData.callerId || "",
+        callerName: callerName,
+        channelId: callId,
+        callerPhoto: callData.callerPhoto || "",
+      },
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "call_channel",
+          priority: "max",
+          defaultVibrateTimings: true,
+          sound: "default",
+        },
+      },
+      apns: {
+        headers: {"apns-priority": "10"},
+        payload: {aps: {sound: "default"}},
+      },
+    };
+
+
+    // send to all the receiver's devices
+    const sendPromises = fcmTokens.map(async (token) => {
+      try {
+        await getMessaging().send({...payload, token});
+        console.log(`Call notification sent to token: ${token}`);
+      } catch (error) {
+        console.error(`Failed to send call notification: ${error.message}`);
+        if (error.code === "messaging/registration-token-not-registered") {
+          // Remove stale token
+          await getFirestore()
+            .collection("users")
+            .doc(receiverId)
+            .update({
+              fcmTokens: admin.firestore.FieldValue.arrayRemove(token),
+            });
+        }
+      }
+    });
+
+    await Promise.all(sendPromises);
+    return null;
+  },
+);

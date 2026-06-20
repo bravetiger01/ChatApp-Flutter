@@ -19,8 +19,14 @@ import 'firebase_options.dart';
 import 'services/notification_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Call notifications are shown by FCM automatically (they have a 'notification' field)
+  // so we only show a local notification for chat messages
+  if (message.data['type'] == 'incoming_call') return;
   print('Background message: ${message.data}');
   await NotificationService.showNotification(message);
 }
@@ -75,12 +81,49 @@ void main() async {
     }
   });
 
-  // Foreground message handler
+  // Foreground message handler — skip calls (HomeScreen Firestore listener handles them)
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     if (message.data['senderId'] == FirebaseAuth.instance.currentUser?.uid)
       return;
+
+    if (message.data['type'] == 'incoming_call') {
+      return;
+    }
     print('Foreground message received: ${message.data}');
     NotificationService.showNotification(message);
+  });
+
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    if (message.data['type'] == 'incoming_call') {
+      // Navigfate to incoming call screen with call data from notif
+      navigatorKey.currentState?.pushNamed(
+        '/incoming-call',
+        arguments: {
+          'callerName': message.data['callerName'] ?? 'Unknown',
+          'callerId': message.data['callerId'] ?? '',
+          'channelId': message.data['channelId'] ?? '',
+          'callerPhoto': message.data['callerPhoto'] ?? '',
+        },
+      );
+    }
+  });
+
+  // App was killed and user tapped the notif -> app launches fresh
+  FirebaseMessaging.instance.getInitialMessage().then((message) {
+    if (message != null && message.data['type'] == 'incoming_call') {
+      // Wait for first frame
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navigatorKey.currentState?.pushNamed(
+          '/incoming-call',
+          arguments: {
+            'callerName': message.data['callerName'] ?? 'Unknown',
+            'callerId': message.data['callerId'] ?? '',
+            'channelId': message.data['channelId'] ?? '',
+            'callerPhoto': message.data['callerPhoto'] ?? '',
+          },
+        );
+      });
+    }
   });
 
   runApp(const SamParkApp());
@@ -102,6 +145,8 @@ class SamParkApp extends StatelessWidget {
       title: 'SamPark',
       theme: AppTheme.darkTheme,
       debugShowCheckedModeBanner: false,
+      navigatorKey:
+          navigatorKey, // Allows navigation from outside the widget tree
       home: const AuthGate(), // Set AuthGate as the home widget
       routes: {
         '/login': (context) => const LoginScreen(),
@@ -113,7 +158,7 @@ class SamParkApp extends StatelessWidget {
         '/new-contact': (context) => const NewContactScreen(),
         '/your-profile': (context) => const YourProfileScreen(),
         '/call': (context) => const CallScreen(),
-        '/incoming-call' : (context) => const IncomingCallScreen(),
+        '/incoming-call': (context) => const IncomingCallScreen(),
       },
     );
   }
